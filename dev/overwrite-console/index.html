@@ -1,0 +1,2043 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-ready="0">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>550C // LOCAL SYSTEM DEBUGGER — REAL-TIME OVERWRITE</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   550C 实时覆写控制台 — 独立试验页面（尚未接入插件）
+
+   灵感：影片里那块「LOCAL SYSTEM DEBUGGER」——资源管理器 + SCRIPTING + 代码墙，
+   四块 REAL-TIME SYSTEM OVERWRITE COMPLETED 横幅依次砸下，最后落在太空电梯
+   线框图上，字幕「太空电梯实时系统覆写完毕」。
+
+   单色 · 白。整个动画只有一档颜色，层级全部靠亮度和反白来分，不靠色相：
+   最亮 = 正在写入，中亮 = 已确认，暗 = 待处理，极暗 = 未建 / 上一次会话的残留。
+   不做多配色方案——这块屏的气质就来自"只有一档磷光"，加色相反而会散。
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* 真正的一档色 */
+  --lit:#ffffff;      /* 正在写入 / 关键 */
+  --ink:#cfcfcf;      /* 主文字 */
+  --dim:#8a8a8a;      /* 次级 */
+  --faint:#4a4a4a;    /* 弱：结构线、表头 */
+  --ghost:#2a2a2a;    /* 极弱：未建部分、残留缓冲 */
+  --line:rgba(255,255,255,.20);
+  --bg:#010101; --bg-panel:#060606; --bg-win:#0b0b0b; --bg-head:#151515;
+  --scan:.05;         /* 扫描线强度，由 JS 按拍点呼吸 */
+  /* 下面这组名字沿袭自插件原有的配色令牌（那套是琥珀 CRT）。整套规则都是按
+     这些名字写的，这里一次性把它们指到单色白上，几十条规则一行都不用动。
+     将来接插件时这一块要么整体换成白色方案，要么由设置注入。 */
+  --amber:var(--ink); --amber-b:var(--lit); --amber-d:var(--faint);
+  --amber-fade:rgba(255,255,255,.28);
+  --text:var(--ink); --text-dim:var(--dim); --text-faint:var(--faint);
+  --red:var(--lit); --red-b:var(--lit); --green:var(--lit); --cyan:var(--lit);
+  --mono:"Cascadia Mono",Consolas,NSimSun,"新宋体","Microsoft YaHei UI",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#000;color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.45;
+  overflow:hidden;-webkit-font-smoothing:antialiased;letter-spacing:.02em}
+/* 扫描线 + 暗角。扫描线强度是 --scan，由 JS 按拍点呼吸：单色屏上"亮了一下"
+   最可靠的来源就是它。 */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;
+  background:repeating-linear-gradient(to bottom,rgba(255,255,255,var(--scan)) 0,rgba(255,255,255,var(--scan)) 1px,transparent 1px,transparent 3px)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:899;
+  background:radial-gradient(ellipse at center,transparent 42%,rgba(0,0,0,.88) 100%)}
+
+#screen{position:fixed;inset:0;background:var(--bg);display:grid;
+  grid-template-rows:18px 1fr 14px;gap:3px;padding:4px;will-change:opacity,filter}
+
+/* ── 菜单栏 ─────────────────────────────────────────────────────────────── */
+#menu{display:flex;align-items:center;gap:5px;padding:0 5px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--bg-head),rgba(11,11,11,.85));
+  font-size:7.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--amber);white-space:nowrap;overflow:hidden}
+#menu .glyph{color:var(--text-dim);border:1px solid var(--line);padding:0 3px;font-size:7px}
+#menu .brand{font-weight:700;letter-spacing:.18em;text-shadow:0 0 8px var(--amber-fade)}
+#menu .mi{color:var(--text-dim)}
+#menu .mi.on{color:var(--amber)}
+#menu .mi b{color:var(--amber);font-weight:400}
+#menu .sp{flex:1}
+#menu .nav{color:var(--text-faint);border:1px solid var(--line);padding:0 5px;display:flex;align-items:center;height:13px}
+#menu .nav.on{color:var(--lit);border-color:var(--amber);background:rgba(255,255,255,.08);text-shadow:0 0 8px var(--amber-fade)}
+#menu .clock{color:var(--text-dim);font-variant-numeric:tabular-nums}
+
+/* ── 工作台网格 ───────────────────────────────────────────────────────────
+   几何直接照参考图量：左栏 24% 全高（上面资源树、下面 T/E 与四路示波器），
+   右侧上部 30% 是 SCRIPTING ＋ 代码墙，下部 70% 是节点图 ＋ 电梯。
+   relative 是给片尾"最大化"用的：电梯面板改成 absolute 挂在这里，
+   而不是用 position:fixed —— #screen 上有 will-change/filter，会自成一个
+   包含块，fixed 的参照系就不再是视口，行为不可预期。 */
+#bench{position:relative;display:grid;gap:3px;min-height:0;
+  grid-template-columns:24% 20% 24% 32%;grid-template-rows:30% 34% 36%;
+  grid-template-areas:
+    "resource script code code"
+    "resource topo   topo elev"
+    "te       topo   topo elev"}
+
+/* ── 面板 ─────────────────────────────────────────────────────────────────
+   成形不是淡入，是"被写出来"：JS 逐帧给 clip-path 做从左到右的擦除，并且在
+   写入边缘留一条亮线。淡入会让整块面板同时出现，像贴图；擦除才像设备在画。 */
+.panel{position:relative;border:1px solid var(--line);min-height:0;overflow:hidden;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,rgba(21,21,21,.5),rgba(6,6,6,.15));opacity:0}
+.panel.in{opacity:1}
+.panel::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 46px rgba(255,255,255,.035)}
+.p-head{flex:none;display:flex;align-items:center;gap:6px;padding:1px 5px;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--amber);background:linear-gradient(180deg,var(--bg-head),rgba(11,11,11,.9));
+  border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.p-head .t{font-weight:700;text-shadow:0 0 8px var(--amber-fade)}
+.p-head .sp{flex:1}
+.p-head .tab{color:var(--text-faint)}
+.p-head .tab.on{color:var(--amber)}
+.p-head .tag{color:var(--text-dim);font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.p-body{flex:1;min-height:0;overflow:hidden;position:relative;padding:2px 4px}
+/* 页脚是参考图里那种"数据条"：一条细线上挤满 KV，而不是几行说明 */
+.p-foot{flex:none;border-top:1px solid var(--line);padding:0 5px;font-size:7.5px;letter-spacing:.08em;
+  color:var(--text-faint);display:flex;gap:9px;align-items:center;height:12px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+.p-foot b{color:var(--text-dim);font-weight:400}
+.p-foot .v{color:var(--amber)}
+.p-foot .ok{color:var(--lit)}
+.p-foot .bad{color:var(--dim)}
+
+/* ── 资源管理器：树 ───────────────────────────────────────────────────────
+   整棵树一开始就以"极暗占位"铺满（和电梯的幽灵轮廓是同一套语言），扫描前沿
+   逐行把它点亮，并且有一条扫描亮线跟着前沿走。所以这一栏从第一秒起就是满的，
+   不会先空一块再慢慢长出来。
+   行高按"44 行必须正好装进这一栏"定：树是被扫描的对象，末尾几行被裁掉就看不到
+   扫描跑完全程了。字号按参考图的密度压到 8px。 */
+#p-resource{grid-area:resource}
+.trow{display:flex;align-items:center;gap:4px;font-size:8px;line-height:1.3;white-space:nowrap;
+  color:var(--text-dim);opacity:0}
+.trow.in{opacity:1}
+.trow .car{flex:none;width:7px;color:var(--text-faint);font-size:6px}
+.trow .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+.trow .ad{flex:none;color:var(--text-faint);font-variant-numeric:tabular-nums;font-size:7px}
+.trow .ad2{flex:none;width:34px;text-align:right;color:var(--ghost);font-variant-numeric:tabular-nums;font-size:7px}
+.trow .st{flex:none;width:28px;text-align:right;color:var(--text-faint);font-size:7px;letter-spacing:.06em}
+.trow.ghost .nm,.trow.ghost .car,.trow.ghost .ad,.trow.ghost .ad2,.trow.ghost .st{color:var(--ghost)}
+.trow.scan .nm{color:var(--lit)}
+.trow.scan .car{color:var(--lit)}
+.trow.ok .nm{color:var(--text)}
+.trow.ok .st{color:var(--amber-d)}
+.trow.lock .nm{color:var(--lit);text-shadow:0 0 7px var(--amber-fade)}
+.trow.lock .st{color:var(--lit)}
+.trow.hit{background:rgba(255,255,255,.12);box-shadow:inset 2px 0 0 var(--lit)}
+.trow.hit .nm{color:var(--lit)}
+/* 扫描前沿的亮线：跟着树的扫描进度往下走 */
+#treeScan{position:absolute;left:0;right:0;height:2px;pointer-events:none;opacity:0;z-index:2;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.95) 14%,rgba(255,255,255,.3) 62%,transparent);
+  box-shadow:0 0 14px 2px rgba(255,255,255,.4)}
+
+/* ── SCRIPTING ────────────────────────────────────────────────────────────
+   参考图里这一栏只有标题、页签和两行指令——命令条（MAIN()）是挂在代码墙那块
+   的标题行上的，所以这里不放 cmdbar。 */
+#p-script{grid-area:script}
+#scriptBody{font-size:8.5px;line-height:1.6}
+.sl{white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.sl.dim{color:var(--faint)}
+/* 单色屏里的"报错"用反白表示，而不是换个色相 */
+.sl.err{color:var(--bg);background:var(--lit);padding:0 3px;box-shadow:0 0 14px rgba(255,255,255,.35)}
+.sl.ok{color:var(--lit)}
+.sl.warn{color:var(--lit);text-shadow:0 0 7px var(--amber-fade)}
+.cursor{display:inline-block;width:5px;height:8px;background:var(--lit);vertical-align:-1px;margin-left:1px}
+
+/* ── 代码墙 ───────────────────────────────────────────────────────────────
+   顶部那条宽分段进度条是参考图里最显眼的元素之一：横贯整块、数字居中。
+   #codeBody 是独立的滚动层，靠 transform 做"半行"连续位移——一次跳一整行会
+   读成幻灯片，连续位移才读成数据在流。#codeHead 固定在面板底部，是写入端。 */
+#p-code{grid-area:code}
+.bigbar{flex:none;position:relative;height:16px;margin:2px 4px 1px;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);
+  background-image:repeating-linear-gradient(90deg,var(--ghost) 0 3px,transparent 3px 5px);
+  background-size:auto 5px;background-repeat:repeat-x;background-position:0 5px}
+.bigbar i{display:block;height:100%;width:0;background:var(--lit);
+  background-image:repeating-linear-gradient(90deg,var(--lit) 0 3px,transparent 3px 5px);
+  background-size:auto 5px;background-repeat:repeat-x;background-position:0 5px;
+  box-shadow:0 0 10px rgba(255,255,255,.45)}
+.bigbar .pct{position:absolute;left:0;right:0;top:0;text-align:center;font-size:9px;letter-spacing:.1em;
+  color:var(--lit);text-shadow:0 1px 2px #000,0 0 4px #000,0 0 12px rgba(255,255,255,.55);
+  font-variant-numeric:tabular-nums}
+#p-code .p-body{padding:0}
+#codeBody{position:absolute;left:4px;right:4px;top:1px;bottom:5px;overflow:hidden;
+  font-size:7.5px;line-height:1.25;font-variant-numeric:tabular-nums;will-change:transform}
+.cl{white-space:pre;overflow:hidden;color:var(--faint)}
+.cl.old{color:var(--ghost)}   /* 上一次会话的残留缓冲：比新行更暗 */
+.cl.w{color:var(--text-dim)}
+.cl.cm{color:var(--amber-d)}
+.cl.hl{color:var(--lit);text-shadow:0 0 6px var(--amber-fade)}
+#codeHead{position:absolute;left:4px;right:4px;bottom:2px;height:1px;background:var(--lit);
+  box-shadow:0 0 12px 2px rgba(255,255,255,.35);pointer-events:none;opacity:0}
+
+/* ── 拓扑图 ─────────────────────────────────────────────────────────────── */
+#p-topo{grid-area:topo}
+#topoSvg{position:absolute;inset:3px 5px;width:calc(100% - 10px);height:calc(100% - 6px)}
+#topoSvg .box{fill:rgba(255,255,255,.03);stroke:var(--text-faint);stroke-width:1}
+#topoSvg .box.lit{fill:rgba(255,255,255,.09);stroke:var(--amber)}
+#topoSvg .fill{fill:var(--amber);opacity:0}
+#topoSvg .lb{fill:var(--text-faint);font-size:11px;letter-spacing:.06em;font-family:var(--mono)}
+#topoSvg .box.lit+.lb,#topoSvg .g.lit .lb{fill:var(--amber-b)}
+#topoSvg .ln{stroke:var(--text-faint);stroke-width:1;fill:none}
+#topoSvg .ln.lit{stroke:var(--amber);filter:drop-shadow(0 0 3px var(--amber-fade))}
+#topoSvg .dot{fill:var(--text-faint)}
+#topoSvg .dot.lit{fill:var(--amber-b)}
+#topoSvg .st{fill:var(--amber);font-size:9px;letter-spacing:.06em;font-family:var(--mono);opacity:0}
+
+/* ── 太空电梯：加载/组装场景 ────────────────────────────────────────────── */
+/* 最大化（hero）：位置与尺寸由 JS 按 t 插值，不用 CSS 过渡，这样 ?at= 抓到的
+   中间帧和实时播放完全一致。
+   grid-area:auto 是必须的，不是装饰：绝对定位的网格子元素若带确定的 grid-area，
+   规范规定它以「那个网格区域」作为包含块——于是 left/top 会相对格子而不是相对
+   #bench，面板会被整体推出屏幕（实测落点 914,511）。清掉确定的网格位置，
+   包含块才回落到 position:relative 的 #bench。 */
+#p-elev{grid-area:elev;z-index:10}
+#p-elev.hero{grid-area:auto;background:var(--bg);border-color:var(--amber-d);
+  box-shadow:0 0 60px rgba(0,0,0,.85),0 0 90px rgba(255,255,255,.12)}
+#elevCanvas{position:absolute;inset:0;width:100%;height:100%}
+/* 左侧分段刻度：24 节塔身，锁一节亮一格 */
+.elev-ticks{position:absolute;left:4px;top:22px;bottom:4px;display:flex;flex-direction:column-reverse;gap:1px;z-index:3}
+.elev-ticks i{width:5px;height:2px;background:var(--text-faint);opacity:.5}
+.elev-ticks i.on{background:var(--amber);opacity:1;box-shadow:0 0 5px var(--amber-fade)}
+.elev-ticks i.now{background:var(--amber-b);opacity:1;box-shadow:0 0 9px var(--amber-b)}
+/* 右上读数 */
+.elev-hud{position:absolute;right:5px;top:20px;width:150px;z-index:3;
+  background:rgba(6,6,6,.55);border:1px solid var(--line);padding:2px 5px}
+/* hero 时把读数让到②号横幅下面：它俩都在右上角，不然会叠字 */
+#p-elev.hero .elev-hud{top:128px}
+.eh-row{display:flex;gap:6px;font-size:8.5px;letter-spacing:.06em;line-height:1.6;white-space:nowrap}
+.eh-row .eh-k{color:var(--text-faint);width:52px;flex:none}
+.eh-row .eh-v{color:var(--amber);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+.eh-row .eh-v.ok{color:var(--green)}
+.eh-row .eh-v.warn{color:var(--amber-b)}
+.elev-bar{margin-top:3px;height:5px;border:1px solid var(--line);background:rgba(255,255,255,.06)}
+.elev-bar i{display:block;height:100%;width:0;background:var(--amber);
+  background-image:repeating-linear-gradient(90deg,var(--amber) 0 3px,transparent 3px 5px);box-shadow:0 0 7px var(--amber-fade)}
+/* 左下分段日志 */
+.elev-log{position:absolute;left:14px;bottom:4px;z-index:3;font-size:8.5px;line-height:1.6;
+  letter-spacing:.04em;color:var(--text-faint);white-space:pre;text-shadow:0 1px 3px #000}
+.elev-log b{color:var(--amber);font-weight:400}
+.elev-tag{position:absolute;right:5px;bottom:2px;font-size:8.5px;letter-spacing:.14em;color:var(--text-faint);z-index:3}
+
+/* ── T/E 与示波器 ─────────────────────────────────────────────────────────
+   参考图里左下角是两块并排：一条很窄很高的 T/E 编号列表，右侧才是四路
+   PROCESSING / SIGNAL / STORAGE / FPS 小图。 */
+#p-te{grid-area:te}
+#teBody{display:flex;gap:6px;height:100%;padding:2px 4px}
+#teList{flex:none;width:38%;overflow:hidden}
+.terow{display:flex;gap:4px;font-size:7.5px;line-height:1.36;white-space:nowrap;color:var(--text-dim)}
+.terow .h{color:var(--text-faint)}
+.terow .g{color:var(--ghost);font-size:6px}
+.terow .s{color:var(--ghost)}
+.terow.on .s{color:var(--amber)}
+#teScopes{flex:1;min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:3px 6px;align-content:start}
+.scope{border:1px solid var(--line);padding:1px 3px 2px}
+.scope .lab{font-size:6.5px;letter-spacing:.06em;color:var(--text-faint);display:flex;justify-content:space-between;gap:4px}
+.scope .lab b{color:var(--text-dim);font-weight:400;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scope .bars{display:flex;align-items:flex-end;gap:1px;height:11px;margin-top:1px}
+.scope .bars i{flex:1;background:var(--amber-d);min-height:1px}
+.scope .bars i.hi{background:var(--lit)}
+
+/* ── 底部状态栏 ─────────────────────────────────────────────────────────── */
+#status{display:flex;align-items:center;gap:10px;padding:0 6px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--bg-win),rgba(6,6,6,.9));font-size:7.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--text-faint);white-space:nowrap;overflow:hidden}
+#status .v{color:var(--amber)}
+#status .sp{flex:1}
+#status .hint{color:var(--text-faint);text-transform:none;letter-spacing:.06em}
+
+/* ── 四块覆写横幅 ─────────────────────────────────────────────────────────
+   参考图里横幅是**两行**、居中的：
+       REAL-TIME SYSTEM
+       OVERWRITE COMPLETED
+   单行会丢掉它那种"盖章"的方块感，所以宽度和换行都按两行排。
+   砸下来的手感靠三件事叠出来：过冲回弹的缩放、落点瞬间的反白闪、以及一条从
+   中心向两侧扫出去的冲击波横线（.shock）。 */
+#banners{position:absolute;inset:0;pointer-events:none;z-index:60}
+.banner{position:absolute;transform-origin:50% 50%;opacity:0;
+  border:1px solid var(--lit);background:rgba(255,255,255,.08);
+  box-shadow:0 0 22px rgba(255,255,255,.35),inset 0 0 22px rgba(255,255,255,.1);
+  padding:4px 10px;font-size:9.5px;line-height:1.35;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--lit);text-align:center;width:15.5em;
+  text-shadow:0 0 9px rgba(255,255,255,.85);white-space:normal}
+.banner::before,.banner::after{content:"";position:absolute;top:50%;width:5px;height:5px;
+  background:var(--lit);transform:translateY(-50%)}
+.banner::before{left:-3px} .banner::after{right:-3px}
+.banner .sweep{position:absolute;inset:0;opacity:0;visibility:hidden;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);
+  transform:translateX(-100%)}
+.banner .shock{position:absolute;left:50%;top:50%;width:240vw;height:1px;margin-left:-120vw;margin-top:-.5px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent);
+  transform:scaleX(0);transform-origin:50% 50%;pointer-events:none;opacity:0;visibility:hidden}
+
+/* ── 字幕 ───────────────────────────────────────────────────────────────── */
+#subtitle{position:absolute;left:0;right:0;bottom:6.5%;text-align:center;z-index:70;pointer-events:none;opacity:0}
+#subtitle .zh{display:block;font-size:17px;letter-spacing:.18em;color:#fff;
+  text-shadow:0 0 16px rgba(255,255,255,.6),0 2px 8px #000}
+#subtitle .en{display:block;margin-top:2px;font-size:12px;letter-spacing:.1em;color:#e0e0e0;
+  text-shadow:0 0 12px rgba(255,255,255,.45),0 2px 8px #000}
+
+/* ── 全屏扫掠 / 故障条 / 开机闪 / 提交闪 ───────────────────────────────── */
+#sweep{position:fixed;left:0;right:0;height:90px;pointer-events:none;z-index:880;opacity:0;visibility:hidden;
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.09) 45%,rgba(255,255,255,.16) 50%,rgba(255,255,255,.09) 55%,transparent)}
+/* 开机用黑场盖住；提交瞬间用 #pop 闪一次纯白，两者不能共用一个层 */
+#flash{position:fixed;inset:0;background:#000;z-index:1000;pointer-events:none;opacity:0}
+#pop{position:fixed;inset:0;z-index:1001;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at 50% 55%,rgba(255,255,255,.94),rgba(255,255,255,.5) 42%,rgba(255,255,255,.12) 74%)}
+/* 故障条：一小段横向撕裂。
+   早先做成 height:8px + 横贯整屏的虚线条，结果在片尾那条带子读起来像渲染坏了，
+   而不是"信号出了问题"——真正的撕裂是局部的、细的、一闪而过的。 */
+#glitch{position:fixed;left:0;top:0;width:0;height:2px;z-index:890;pointer-events:none;
+  opacity:0;visibility:hidden;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.92) 0 2px,transparent 2px 5px);
+  box-shadow:0 0 9px rgba(255,255,255,.55)}
+#hud{position:fixed;right:6px;bottom:24px;z-index:1200;font-size:9px;color:var(--text-faint);
+  background:rgba(0,0,0,.7);border:1px solid var(--line);padding:2px 6px;white-space:pre;display:none}
+
+/* still 模式：冻结 CSS 动画，保证任意 at 抓帧完全一致 */
+.still *,.still *::before,.still *::after{animation:none !important;transition:none !important}
+/* pinned：still 抓帧时舞台尺寸由查询串钉死。无头浏览器带 --screenshot 时先用
+   默认视口（约 750×485）布局并跑完脚本，直到截图前才套用 --window-size，而那时
+   JS 已冻结、resize 不派发——量出来的矩形和真实画面必然对不上。把尺寸钉死，
+   布局与截图就永远是同一个坐标系。 */
+.pinned,body.pinned{position:relative;overflow:hidden}
+.pinned #screen{position:absolute;left:0;top:0}
+.pinned body::before,.pinned body::after,
+.pinned #sweep,.pinned #glitch,.pinned #flash,.pinned #pop{position:absolute;inset:0}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+</style>
+</head>
+<body>
+<div id="screen">
+
+  <header id="menu">
+    <span class="glyph">▣</span><span class="glyph">A</span><span class="glyph">B</span>
+    <span class="brand">&gt; LOCAL SYSTEM DEBUGGER</span>
+    <span class="mi on">Auto <b>▾</b></span>
+    <span class="mi">Debug</span><span class="mi">Test</span>
+    <span class="sp"></span>
+    <span class="nav" data-nav="NETWORK">NETWORK</span>
+    <span class="nav" data-nav="NODE">NODE</span>
+    <span class="nav" data-nav="DATA">DATA</span>
+    <span class="nav" data-nav="QUERY CODE">QUERY CODE</span>
+    <span class="glyph">⌕</span>
+    <span class="nav" data-nav="FRONT">FRONT</span>
+    <span class="nav" data-nav="AFTER">AFTER</span>
+    <span class="clock" id="menuClock">14:22:07</span>
+  </header>
+
+  <main id="bench">
+
+    <section class="panel" id="p-resource">
+      <div class="p-head">
+        <span class="t">RESOURCE MANAGER</span><span class="sp"></span>
+        <span class="tab">ENGINEERING DATA</span><span class="tab">—</span>
+        <span class="tab on">FUNCTION</span><span class="tab">—</span><span class="tab">TESTING</span>
+      </div>
+      <div class="p-head" style="border-bottom:1px solid var(--line)">
+        <span class="tab on">NETW</span><span class="sp"></span>
+        <span class="tab on">COMPILE</span><span class="tab">ORGANIZATION</span>
+        <span class="tab">ADAPT</span><span class="tab">PERCEPTION</span>
+      </div>
+      <div class="p-body" id="treeBody"><div id="treeScan"></div></div>
+      <div class="p-foot"><span>SCANNED <b id="treeCount">000</b> / 044</span><span>LOCKED <b id="treeLock">000</b></span><span>CRC <b id="treeCrc">00000000</b></span></div>
+    </section>
+
+    <section class="panel" id="p-script">
+      <div class="p-head">
+        <span class="t">SCRIPTING</span><span class="sp"></span>
+        <span class="tab on">COMPILE</span><span class="tab">ORGANIZATION</span>
+        <span class="tab">ADAPT</span><span class="tab">PERCEPTION</span>
+      </div>
+      <div class="p-body" id="scriptBody"></div>
+    </section>
+
+    <section class="panel" id="p-code">
+      <div class="p-head">
+        <span class="tag">COMPILE</span><span class="tab on">ORGANIZATION</span>
+        <span class="tab">ADAPT</span><span class="tab">PERCEPTION</span>
+        <span class="sp"></span>
+        <span class="tag">MAIN()</span>
+        <span class="tag" id="codeTag">0x08000000 · 0012C000 B</span>
+      </div>
+      <div class="bigbar"><i id="bigBar"></i><span class="pct" id="bigPct">0%</span></div>
+      <div class="p-body" id="codePane">
+        <div id="codeBody"></div>
+        <div id="codeHead"></div>
+      </div>
+      <div class="p-foot">
+        <span>TARGET <b class="v">SPACE ELEVATOR · SEG 07</b></span>
+        <span>ROUTER <b id="telRouter">HANDSHAKE</b></span>
+        <span>ROOT CA <b>550C-ROOT</b></span>
+        <span>STRATEGY <b>FULL ERASE + WRITE</b></span>
+        <span>ROLLBACK <b>SLOT_A / SLOT_B</b></span>
+        <span>RATE <b id="telRate">0.0 GB/s</b></span>
+        <span>PACKETS <b id="telPkt">0</b></span>
+        <span>RETRY <b id="telRetry">0</b></span>
+        <span>WROTE <b id="codeWrote">0x00000000</b></span>
+        <span>CRC32 <b id="codeCrc">00000000</b></span>
+        <span id="codeTail"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="p-topo">
+      <div class="p-head"><span class="t">SYSTEM TOPOLOGY</span><span class="sp"></span><span class="tag" id="topoTag">0 / 11 SUBSYSTEMS</span></div>
+      <div class="p-body"><svg id="topoSvg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet"></svg></div>
+    </section>
+
+    <section class="panel" id="p-elev">
+      <div class="p-head">
+        <span class="t">SPACE ELEVATOR · SEG 07</span><span class="sp"></span>
+        <span class="tag" id="elevTag">REAL-TIME ASSEMBLY</span>
+      </div>
+      <div class="p-body" style="padding:0">
+        <canvas id="elevCanvas"></canvas>
+        <div class="elev-ticks" id="elevTicks"></div>
+        <div class="elev-hud">
+          <div class="eh-row"><span class="eh-k">ASSEMBLY</span><span class="eh-v" id="elevSeg">00 / 24</span></div>
+          <div class="eh-row"><span class="eh-k">ALTITUDE</span><span class="eh-v" id="elevAlt">0.00 km</span></div>
+          <div class="eh-row"><span class="eh-k">TENSION</span><span class="eh-v" id="elevTen">0.00 kN</span></div>
+          <div class="eh-row"><span class="eh-k">CLIMBER</span><span class="eh-v" id="elevClim">STANDBY</span></div>
+          <div class="eh-row"><span class="eh-k">TETHER</span><span class="eh-v" id="elevRing">STOWED</span></div>
+          <div class="elev-bar"><i id="elevBar"></i></div>
+        </div>
+        <div class="elev-log" id="elevLog"></div>
+      </div>
+      <div class="elev-tag" id="elevFoot">TETHER TENSION NOMINAL · CLIMBER 03 ASCENDING</div>
+    </section>
+
+    <section class="panel" id="p-te">
+      <div class="p-head"><span class="t">T/E</span><span class="sp"></span><span class="tag">DATA INFORMATION</span></div>
+      <div class="p-body" id="teBody">
+        <div id="teList"></div>
+        <div id="teScopes"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer id="status">
+    <span>OVERWRITE ENGINE <span class="v">v1.14</span></span>
+    <span>ROOT <span class="v">550C-ROOT</span></span>
+    <span>STAGE <span class="v" id="stStage">IDLE</span></span>
+    <span>MODE <span class="v" id="stMode">READ-ONLY</span></span>
+    <span class="sp"></span>
+    <span class="hint" id="stHint">空格 重播 · P 暂停 · D 调试</span>
+    <span>NODES <span class="v">47 / 47</span></span>
+  </footer>
+
+  <div id="banners"></div>
+  <div id="subtitle">
+    <span class="zh">太空电梯实时系统覆写完毕</span>
+    <span class="en">Real time overwrite of the Space Elevator system completed.</span>
+  </div>
+</div>
+
+<div id="sweep"></div>
+<div id="glitch"></div>
+<div id="flash"></div>
+<div id="pop"></div>
+<div id="hud"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   Deterministic timeline.
+
+   Everything on screen is a pure function of t (milliseconds since the show
+   started): render(t) computes the whole frame, so ?at=5100 freezes the show at
+   5.1 s and two runs of the same at= produce the same PNG. No timers, no
+   incremental state — which is also what makes it cheap to port into the plugin
+   later (one phase function driving render() from the show's own clock).
+   ══════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict'
+
+  var params = new URLSearchParams(location.search)
+  var AT = params.has('at') ? Number(params.get('at')) : null
+  var SPEED = Number(params.get('speed') || 1) || 1
+  var LOOP = params.get('loop') === '1'
+  var DEBUG = params.get('debug') === '1'
+  var STILL = AT !== null || params.get('still') === '1'
+  // 抓帧用：钉死舞台尺寸（见 .pinned 的说明）。交互播放时不传，保持自适应。
+  var PIN_W = Number(params.get('w') || 0) || 0
+  var PIN_H = Number(params.get('h') || 0) || 0
+  var BASE_CLOCK = 14 * 3600 + 22 * 60 + 7 // 14:22:07, the film's own stamp
+
+  /* ── 分镜时间线（毫秒）──────────────────────────────────────────────────
+     每个标记是那一段"开始"的时刻；时长写在旁边。
+
+     节奏是按"不能让画面停住"排的：任何时刻至少有一处在动——扫描前沿、代码流、
+     塔身生长、镜头环视、扫描带，五条永远有至少两条在跑。原先的连接戏占了 2 秒
+     只为了等一个 404，现在压到 1.9 秒并且中间垫了代码墙的起始。 */
+  var TL = {
+    powerOn:    0,     // 开机：黑场 + 一条亮线扫下来
+    menuAt:     380,   // 菜单栏逐项点亮
+    panelsAt:   560,   // 面板依次被"写"出来（clip-path 擦除）
+    wipeStep:   105,   // 每个面板错开 105ms
+    wipeMs:     300,   // 单个面板的擦除时长
+    treeAt:     900,   // 资源管理器开始扫描（整棵树一开始就以幽灵行铺满）
+    treeRate:   58,    // 每行 58ms → 30 行约 1.75s
+    /* ── 太空电梯：组装 + 上升，两段 ──────────────────────────────────
+       组装段：结构被逐节"写"进幽灵轮廓（这是"加载出来"的部分）；
+       上升段：轿厢沿缆索射上去，镜头随高度急剧拉远，基座站缩成一点、地平线
+       显出弧度、天空从雾霭转黑——这是整支动画的收束，所以放在面板最大化之后。 */
+    elevAt:     1300,  // 幽灵轮廓落位、基座开工
+    elevSeg:    220,   // 每节塔身 220ms（24 节约 5.3s）
+    elevSegs:   24,
+    elevRing:   6900,  // 缆索向轨道放线
+    elevRingMs: 700,
+    ascendAt:   7600,  // 轿厢起升
+    ascendMs:   3200,  // 上升时长
+    ascendTo:   620,   // 终点标高（km）
+    openAt:     1000,  // SCRIPTING 自报家门（先让面板有内容，别空着等连接）
+    scriptAt:   2400,  // SCRIPTING 第一次连接
+    typeRate:   15,    // 打字速度（每字）
+    errAt:      3150,  // 404 · NO ROUTE
+    retryAt:    3480,  // 第二次连接
+    routeAt:    4300,  // ROUTER CONTROL MODULE LOCKED
+    codeAt:     3350,  // 代码墙开始冲刷（和连接戏并行，画面不留白）
+    codeRate:   24,    // 每行 24ms，且是连续位移不是整行跳
+    banner1:    5000,  // ① 资源树上方
+    topoAt:     5600,  // 拓扑开始逐个子系统点亮
+    topoStep:   130,
+    banner2:    5800,  // ② 拓扑上方
+    banner3:    6500,  // ③ 代码墙/电梯边界
+    heroAt:     7400,  // 面板最大化，进入上升镜头
+    heroMs:     760,
+    banner4:    10400, // ④ 上升途中
+    fullAt:     11100, // 进度 100%
+    subAt:      11800, // 字幕
+    commitAt:   12800, // 提交闪白
+    fadeAt:     13200, // 整屏淡出
+    endAt:      13900
+  }
+  var TOTAL = TL.endAt
+
+  /* ── 整屏的"活着" ──────────────────────────────────────────────────────
+     一块真的 CRT 不会静止。这里在几个拍点上给整屏 33ms 粒度的横向错位，配合
+     极慢的纵向滚动漂移，让画面在任何时刻都有细微的运动——这是"动画感"里最便宜
+     也最容易被忽略的一半。 */
+  var JITTER = [
+    [TL.routeAt - 70, 90], [TL.banner1, 80], [TL.banner2, 70], [TL.banner3, 80],
+    [TL.banner4, 90], [TL.heroAt, 110], [TL.fullAt, 70], [TL.commitAt - 260, 130]
+  ]
+  /* 每个拍点亮一下整屏亮度，让"发生了一件事"有体感 */
+  var BUMP = []
+
+  /* ── 确定性随机 ────────────────────────────────────────────────────────
+     Hash, not a stream: rnd(i, salt) depends only on its arguments, so the
+     frame at t never depends on how many frames were drawn before it. */
+  function rnd(i, salt) {
+    var h = Math.imul(i | 0, 374761393) + Math.imul(salt | 0, 668265263)
+    h = Math.imul(h ^ (h >>> 13), 1274126177)
+    h = h ^ (h >>> 16)
+    return (h >>> 0) / 4294967296
+  }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x }
+  function seg(t, a, b) { return clamp01((t - a) / (b - a)) }
+  function ease(x) { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2 }
+  function easeOut(x) { return 1 - Math.pow(1 - x, 3) }
+  function lerp(a, b, x) { return a + (b - a) * x }
+  function hex(v, w) { return v.toString(16).toUpperCase().padStart(w, '0') }
+
+  /* CRC32，让页脚那个校验和是真的算出来的，不是编的 */
+  var crcTable = null
+  function crc32(text, seed) {
+    if (crcTable === null) {
+      crcTable = new Uint32Array(256)
+      for (var i = 0; i < 256; i++) {
+        var v = i
+        for (var b = 0; b < 8; b++) v = v & 1 ? 0xEDB88320 ^ (v >>> 1) : v >>> 1
+        crcTable[i] = v >>> 0
+      }
+    }
+    var crc = (seed ^ 0xFFFFFFFF) >>> 0
+    for (var k = 0; k < text.length; k++) crc = (crcTable[(crc ^ text.charCodeAt(k)) & 0xFF] ^ (crc >>> 8)) >>> 0
+    return (crc ^ 0xFFFFFFFF) >>> 0
+  }
+
+  /* ══ 内容表 ═════════════════════════════════════════════════════════════
+     The resource tree, in the film's own register: engineering subsystems of a
+     space elevator, walked depth-first. `target` is the row SCRIPTING reaches
+     for — it is the one row whose state changes with the narrative.
+
+     Deliberately sized to FIT the tall left panel (30 rows, no scrolling): the
+     tree has to still be showing ROUTER CONTROL MODULE at the moment SCRIPTING
+     reaches for it, and a list that has scrolled past its own punchline reads as
+     noise. */
+  var TREE = [
+    ['SDN', 0, 1], ['ROOT CIRCUIT', 1, 0], ['HARDWARE ABSTRACT', 1, 0], ['SPECIFIC SENSOR', 1, 1],
+    ['SENSOR FUSION', 2, 0], ['IMU 9-AXIS', 2, 0], ['SERVO', 1, 0], ['MECHANICAL STRUCTURE', 1, 0],
+    ['MOLECULAR TRANSMITTER', 1, 0], ['SAFETY', 1, 1], ['WATCHDOG', 2, 0], ['GEOFENCE / NFZ', 2, 0],
+    ['SOFTWARE', 1, 1], ['RTOS SCHEDULER', 2, 0], ['ROUTER CONTROL MODULE', 2, 0, 1], ['OVERRIDE HANDLER', 2, 0],
+    ['HARDWARE', 1, 1], ['POWER BUS', 2, 0], ['TETHER TENSION', 2, 0], ['CLIMBER BUS', 2, 0],
+    ['COMMUNICATION', 1, 1], ['MAVLINK v2', 2, 0], ['NIA2 · AES-CMAC', 2, 0], ['5G n78 / n79', 2, 0],
+    ['QUANTUM', 1, 1], ['QUBIT ARRAY 4.2K', 2, 0], ['CLASSICAL CTRL UNIT', 2, 0], ['PERCEPTION', 1, 1],
+    ['MOTION PLANNING', 2, 0], ['OBSTACLE MODEL', 2, 0], ['ELEVATOR', 1, 1], ['BASE STATION', 2, 0],
+    ['COUNTERWEIGHT', 2, 0], ['ORBITAL RING', 2, 0], ['CLIMBER 01-04', 2, 0], ['TETHER SEG 01-32', 2, 0],
+    ['PAYLOAD LOCK', 2, 0], ['GUIDE RAIL', 1, 0], ['THERMAL', 1, 0], ['ATTITUDE CONTROL', 1, 0],
+    ['NAVIGATION', 1, 0], ['TELEMETRY', 1, 0], ['FLIGHT LOG', 1, 0], ['SECURE BOOT', 1, 0]
+  ]
+  var TARGET_ROW = -1
+  for (var ti = 0; ti < TREE.length; ti++) if (TREE[ti][3] === 1) TARGET_ROW = ti
+
+  function treeAddr(i) { return '0x' + hex(0x08000000 + i * 0x1A0 + (i % 7) * 0x30, 8) }
+
+  /* ── 代码墙 ───────────────────────────────────────────────────────────── */
+  var MNEM = ['MOV', 'LDR', 'STR', 'ADD', 'SUB', 'AND', 'ORR', 'EOR', 'CMP', 'B', 'BL', 'BX',
+    'PUSH', 'POP', 'LSR', 'LSL', 'MUL', 'MLA', 'MRS', 'MSR', 'SVC', 'DMB']
+  /* ── 代码墙 ─────────────────────────────────────────────────────────────
+     参考图里这面墙是"每一行都顶满面板宽度"的十六进制倾泻，所以每行给足 32 字节、
+     外加符号名+偏移。行短了这块就会显得空，而它是画面上半部的主体。 */
+  var SYMS = ['px4_secure_boot', 'nx_start', 'flight_controller', 'security_init', 'image_verify',
+    'orb_copy', 'control_allocator', 'safety_check', 'wd_start', 'mavlink_signing_enable',
+    'set_rollback_slot', 'jump_kernel', 'verify_signature', 'lock_payload', 'revoke_ca']
+  function codeLine(i) {
+    var addr = 0x08000000 + i * 32
+    var bytes = []
+    for (var b = 0; b < 32; b++) bytes.push(hex(Math.floor(rnd(i * 32 + b, 11) * 256), 2))
+    var dump = bytes.slice(0, 16).join(' ') + '  ' + bytes.slice(16).join(' ')
+    if (i % 13 === 5) {
+      return hex(addr, 8) + '  ' + dump + '   ; OVERRIDE SEGMENT ' +
+        String(Math.floor(i / 13) + 1).padStart(2, '0') + ' — 550C ROOT CA WRITE OK'
+    }
+    var m = MNEM[Math.floor(rnd(i, 23) * MNEM.length)]
+    var r0 = 'R' + Math.floor(rnd(i, 31) * 13)
+    var imm = '0x' + hex(Math.floor(rnd(i, 41) * 0xFFFF), 4)
+    var sym = SYMS[Math.floor(rnd(i, 71) * SYMS.length)] + '+0x' + hex(Math.floor(rnd(i, 73) * 0x600), 3)
+    return hex(addr, 8) + '  ' + dump + '   ' + m.padEnd(4) + ' ' + r0 + ', #' + imm +
+      '   ; ' + sym
+  }
+
+  /* 上一次会话残留在缓冲里的一段：开场时代码墙就是满的，随新数据写入被逐行顶上去。
+     真实调试器不会空着窗口等你敲第一行，而且空着的墙在那几秒里只是块黑斑。 */
+  function oldLine(k) {
+    var addr = 0x08000000 - k * 32
+    var bytes = []
+    for (var b = 0; b < 32; b++) bytes.push(hex(Math.floor(rnd(k * 32 + b, 53) * 256), 2))
+    var dump = bytes.slice(0, 16).join(' ') + '  ' + bytes.slice(16).join(' ')
+    var m = MNEM[Math.floor(rnd(k, 59) * MNEM.length)]
+    var sym = SYMS[Math.floor(rnd(k, 77) * SYMS.length)] + '+0x' + hex(Math.floor(rnd(k, 79) * 0x600), 3)
+    return hex(addr, 8) + '  ' + dump + '   ' + m.padEnd(4) + 'R' +
+      Math.floor(rnd(k, 61) * 13) + ', #0x' + hex(Math.floor(rnd(k, 67) * 0xFFFF), 4) +
+      '   ; ' + sym
+  }
+  function lineAt(seq) { return seq < 0 ? oldLine(-seq) : codeLine(seq) }
+
+  /* ── 拓扑图：11 个子系统 ──────────────────────────────────────────────── */
+  /* ── 拓扑图：16 个子系统，五层 ─────────────────────────────────────────
+     参考图里这块是"又宽又扁"的（约 3:1），而在这套网格里它拿到的是接近方形
+     的区域，所以排成五层纵向展开——方框数量按参考图的密度给足，不然这块会
+     显得空，而它恰恰是画面下半部的主体。 */
+  var BOX = [
+    { id: 'core', lb: '550C CORE', cx: 500, cy: 56, w: 260, h: 58 },
+    { id: 'router', lb: 'ROUTER CONTROL', cx: 165, cy: 236, w: 230, h: 52 },
+    { id: 'sched', lb: 'SCHEDULER', cx: 500, cy: 236, w: 230, h: 52 },
+    { id: 'tether', lb: 'TETHER CONTROL', cx: 835, cy: 236, w: 230, h: 52 },
+    { id: 'base', lb: 'BASE STATION', cx: 118, cy: 412, w: 210, h: 48 },
+    { id: 'climber', lb: 'CLIMBER BUS', cx: 366, cy: 412, w: 210, h: 48 },
+    { id: 'power', lb: 'POWER BUS', cx: 634, cy: 412, w: 210, h: 48 },
+    { id: 'weight', lb: 'COUNTERWEIGHT', cx: 882, cy: 412, w: 210, h: 48 },
+    { id: 'rail', lb: 'GUIDE RAIL', cx: 118, cy: 578, w: 210, h: 46 },
+    { id: 'payload', lb: 'PAYLOAD LOCK', cx: 366, cy: 578, w: 210, h: 46 },
+    { id: 'tension', lb: 'TETHER TENSION', cx: 634, cy: 578, w: 210, h: 46 },
+    { id: 'ring', lb: 'ORBITAL RING', cx: 882, cy: 578, w: 210, h: 46 },
+    { id: 'attitude', lb: 'ATTITUDE CTRL', cx: 118, cy: 744, w: 210, h: 44 },
+    { id: 'verify', lb: 'IMAGE VERIFY', cx: 366, cy: 744, w: 210, h: 44 },
+    { id: 'log', lb: 'FLIGHT LOG', cx: 634, cy: 744, w: 210, h: 44 },
+    { id: 'safety', lb: 'SAFETY FENCE', cx: 882, cy: 744, w: 210, h: 44 }
+  ]
+  var LINK = [
+    ['core', 'router'], ['core', 'sched'], ['core', 'tether'],
+    ['router', 'base'], ['router', 'climber'], ['sched', 'climber'], ['sched', 'power'],
+    ['tether', 'power'], ['tether', 'weight'],
+    ['base', 'rail'], ['climber', 'payload'], ['power', 'tension'], ['weight', 'ring'],
+    ['base', 'payload'], ['tension', 'ring'],
+    ['rail', 'attitude'], ['payload', 'verify'], ['tension', 'log'], ['ring', 'safety'],
+    ['log', 'verify'], ['attitude', 'safety']
+  ]
+
+  /* ── 四块横幅 ───────────────────────────────────────────────────────────
+     位置照参考图量：两块在中上部（左约 22% / 60%）、两块在中下部（左约 22% /
+     55%），也就是"上二下二"四角分布，而不是贴着四周边框。 */
+  var BANNER = [
+    { at: TL.banner1, text: 'REAL-TIME SYSTEM OVERWRITE COMPLETED', left: '22%', top: '38%' },
+    { at: TL.banner2, text: 'REAL-TIME SYSTEM OVERWRITE COMPLETED', left: '60%', top: '34%' },
+    { at: TL.banner3, text: 'REAL-TIME SYSTEM OVERWRITE COMPLETE', left: '22%', top: '70%' },
+    { at: TL.banner4, text: 'REAL-TIME SYSTEM OVERWRITE COMPLETED', left: '54%', top: '69%' }
+  ]
+
+  /* ══ DOM 句柄 ═══════════════════════════════════════════════════════════ */
+  var $ = function (id) { return document.getElementById(id) }
+  var el = {
+    screen: $('screen'), menu: $('menu'), clock: $('menuClock'), bench: $('bench'),
+    panels: { resource: $('p-resource'), script: $('p-script'),
+      code: $('p-code'), topo: $('p-topo'), elev: $('p-elev'), te: $('p-te') },
+    treeBody: $('treeBody'), treeScan: $('treeScan'),
+    treeCount: $('treeCount'), treeLock: $('treeLock'), treeCrc: $('treeCrc'),
+    scriptBody: $('scriptBody'),
+    bigBar: $('bigBar'), bigPct: $('bigPct'),
+    telRouter: $('telRouter'), telRate: $('telRate'),
+    telPkt: $('telPkt'), telRetry: $('telRetry'),
+    codePane: $('codePane'), codeBody: $('codeBody'), codeHead: $('codeHead'),
+    codeWrote: $('codeWrote'), codeCrc: $('codeCrc'), codeTail: $('codeTail'),
+    topoSvg: $('topoSvg'), topoTag: $('topoTag'),
+    elevCanvas: $('elevCanvas'), elevTag: $('elevTag'), elevFoot: $('elevFoot'),
+    elevTicks: $('elevTicks'), elevSeg: $('elevSeg'), elevAlt: $('elevAlt'), elevTen: $('elevTen'),
+    elevClim: $('elevClim'), elevRing: $('elevRing'), elevBar: $('elevBar'), elevLog: $('elevLog'),
+    teList: $('teList'), teScopes: $('teScopes'),
+    stStage: $('stStage'), stMode: $('stMode'),
+    banners: $('banners'), subtitle: $('subtitle'),
+    sweep: $('sweep'), glitch: $('glitch'), flash: $('flash'), pop: $('pop'), hud: $('hud')
+  }
+
+  /* ══ 静态骨架（只建一次）═════════════════════════════════════════════════ */
+
+  // 菜单导航项：跑到哪一项就点亮哪一项
+  var NAV = Array.prototype.slice.call(el.menu.querySelectorAll('.nav'))
+
+  // 资源树行：先建好、藏起来，render(t) 只负责放出来和改状态
+  // 右侧两列小十六进制照参考图那样并排——单列会显得比参考图空
+  var treeRows = []
+  for (var r = 0; r < TREE.length; r++) {
+    var d = document.createElement('div')
+    d.className = 'trow'
+    d.style.paddingLeft = (1 + TREE[r][1] * 9) + 'px'
+    var car = document.createElement('span'); car.className = 'car'
+    car.textContent = TREE[r][2] ? '▾' : '·'
+    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = TREE[r][0]
+    var ad = document.createElement('span'); ad.className = 'ad'; ad.textContent = treeAddr(r)
+    var ad2 = document.createElement('span'); ad2.className = 'ad2'; ad2.textContent = hex(rnd(r, 91) * 0xFFFF, 4)
+    var st = document.createElement('span'); st.className = 'st'; st.textContent = '···'
+    d.appendChild(car); d.appendChild(nm); d.appendChild(ad); d.appendChild(ad2); d.appendChild(st)
+    el.treeBody.appendChild(d)
+    treeRows.push({ el: d, st: st, state: '', in: false, flash: '' })
+  }
+
+  // 代码墙：池子大小按面板实际高度算，多留两行给"半行位移"用
+  var codeRows = []
+  var CODE_LINE_H = 9.4
+  function buildCodePool() {
+    var want = Math.max(8, Math.floor((el.codePane.clientHeight - 4) / CODE_LINE_H)) + 2
+    while (codeRows.length > want) el.codeBody.removeChild(codeRows.pop())
+    while (codeRows.length < want) {
+      var l = document.createElement('div')
+      l.className = 'cl'
+      el.codeBody.appendChild(l)
+      codeRows.push(l)
+    }
+  }
+
+  // 拓扑图
+  var SVGNS = 'http://www.w3.org/2000/svg'
+  var topo = { box: {}, fill: {}, lb: {}, ln: [], dot: [] }
+  function svgEl(name, cls) {
+    var n = document.createElementNS(SVGNS, name)
+    if (cls) n.setAttribute('class', cls)
+    return n
+  }
+  for (var li = 0; li < LINK.length; li++) {
+    var a = BOX.find(function (b) { return b.id === LINK[li][0] })
+    var b2 = BOX.find(function (b) { return b.id === LINK[li][1] })
+    var path = svgEl('path', 'ln')
+    path.setAttribute('d', 'M' + a.cx + ' ' + (a.cy + a.h / 2) + ' L' + b2.cx + ' ' + (b2.cy - b2.h / 2))
+    el.topoSvg.appendChild(path)
+    topo.ln.push(path)
+  }
+  for (var bi = 0; bi < BOX.length; bi++) {
+    var g = svgEl('g', 'g')
+    var bx = BOX[bi]
+    var rect = svgEl('rect', 'box')
+    rect.setAttribute('x', bx.cx - bx.w / 2); rect.setAttribute('y', bx.cy - bx.h / 2)
+    rect.setAttribute('width', bx.w); rect.setAttribute('height', bx.h)
+    var fill = svgEl('rect', 'fill')
+    fill.setAttribute('x', bx.cx - bx.w / 2); fill.setAttribute('y', bx.cy - bx.h / 2)
+    fill.setAttribute('width', 3); fill.setAttribute('height', bx.h)
+    var lb = svgEl('text', 'lb')
+    lb.setAttribute('x', bx.cx); lb.setAttribute('y', bx.cy + 3.5)
+    lb.setAttribute('text-anchor', 'middle')
+    lb.textContent = bx.lb
+    var stt = svgEl('text', 'st')
+    stt.setAttribute('x', bx.cx + bx.w / 2 - 6); stt.setAttribute('y', bx.cy - bx.h / 2 + 10)
+    stt.setAttribute('text-anchor', 'end')
+    stt.textContent = 'OK'
+    g.appendChild(rect); g.appendChild(fill); g.appendChild(lb); g.appendChild(stt)
+    el.topoSvg.appendChild(g)
+    topo.box[bx.id] = { rect: rect, g: g, fill: fill, lb: lb, st: stt }
+  }
+
+  // T/E 行 + 四路示波器
+  var TE_ROWS = 12
+  var teRows = []
+  for (var te = 0; te < TE_ROWS; te++) {
+    var tr = document.createElement('div')
+    tr.className = 'terow'
+    tr.innerHTML = '<span class="h">T/E</span><span>0x' + hex(0x1F00 + te * 0x40, 4) +
+      '</span><span class="g">▤</span><span class="s">···</span>'
+    el.teList.appendChild(tr)
+    teRows.push({ el: tr, s: tr.querySelector('.s') })
+  }
+  var SCOPES = [['PROCESSING', 'MHz'], ['SIGNAL', 'dB'], ['STORAGE', 'TB'], ['FPS', 'fps']]
+  var scopeBars = []
+  for (var si = 0; si < SCOPES.length; si++) {
+    var sc = document.createElement('div'); sc.className = 'scope'
+    var lab = document.createElement('div'); lab.className = 'lab'
+    lab.innerHTML = '<span>' + SCOPES[si][0] + '</span><b>--</b>'
+    var bars = document.createElement('div'); bars.className = 'bars'
+    var list = []
+    for (var k2 = 0; k2 < 16; k2++) { var ib = document.createElement('i'); bars.appendChild(ib); list.push(ib) }
+    sc.appendChild(lab); sc.appendChild(bars); el.teScopes.appendChild(sc)
+    scopeBars.push({ bars: list, val: lab.querySelector('b') })
+  }
+
+  // 横幅
+  var bannerEls = []
+  for (var b3 = 0; b3 < BANNER.length; b3++) {
+    var be = document.createElement('div')
+    be.className = 'banner'
+    var bt = document.createElement('span'); bt.className = 'btxt'; bt.textContent = BANNER[b3].text
+    var sw = document.createElement('span'); sw.className = 'sweep'
+    var sh = document.createElement('span'); sh.className = 'shock'
+    be.appendChild(sw); be.appendChild(bt); be.appendChild(sh)
+    if (BANNER[b3].left) be.style.left = BANNER[b3].left
+    if (BANNER[b3].right) be.style.right = BANNER[b3].right
+    be.style.top = BANNER[b3].top
+    el.banners.appendChild(be)
+    bannerEls.push({ el: be, sweep: sw, shock: sh, on: false })
+  }
+
+  /* ══ 太空电梯：实时组装场景 ═════════════════════════════════════════════
+     整支动画的主线，也是"必须一眼看出这是太空电梯"的地方。识别特征不是"一座
+     塔"，而是下面五样同时在场：
+
+       缆索出画    结构一路向上超出画面顶边、越往上越细，旁边标着 → GEO ——那是
+                   通往同步轨道的缆索，不是塔尖；
+       轨道而非桅杆 中央两条平行导轨加横档（爬升舱骑的那条"天梯铁路"），桁架是
+                   围着它收分的四柱，而不是一根等截面的桅杆；
+       巨大爬升舱  舱体横跨两条导轨，带舷窗、抱轨夹钳、下方吊着载荷集装箱。尺寸
+                   必须明显超过桁架，否则看不出它是个能载人的东西；
+       庞大基座站  地面上是六边形基座站：同心灯环、六个着陆坪、撑到地面的支柱，
+                   体量远大于塔身；
+       大气分层    低空几道云带，往上过渡到星空——用大气给出高度感。
+
+     组装仍是逐节写入：幽灵轮廓先铺满，塔身一节节被点亮，锁扣闪一下并向外扩一圈
+     冲击环。全部由 t 决定，?at= 抓到的中间帧和实时播放逐像素一致。 */
+  var ELEV = {
+    segs: 24,          // 塔身节数（读数层也用这个数）
+    baseY: 0.9,        // 基座站顶面标高（km）
+    segH: 0.45,        // 每节高度
+    trackR: 0.26,      // 中央导轨半宽
+    rungStep: 0.30,    // 导轨横档间距
+    railR0: 0.62,      // 桁架底部半径
+    railR1: 0.20,      // 桁架顶部半径（收分）
+    stationR: 2.7,     // 基座站半径
+    weightY: 12.1,     // 配重标高
+    tetherTop: 15.2    // 缆索继续到的高度（超出可见范围，只为"出画"）
+  }
+  ELEV.topY = ELEV.baseY + ELEV.segs * ELEV.segH
+  ELEV.topDoneAt = TL.elevAt + ELEV.segs * TL.elevSeg
+  var GHOST = 0.2 // 未建部分的透明度：要一眼看出"这座电梯将要长成什么样"
+
+  /* ── 上升：这一段才是"太空电梯"该有的样子 ───────────────────────────
+     组装段只是把结构写出来（加载）；上升段是轿厢沿缆索射上去。关键是镜头：
+     可见高度从 14 km 一路拉到 1400 km，于是——
+
+       基座站   2.7 km 的半径在这个比例下缩成一个亮点；
+       塔身     11.7 km 只剩一根线，缆索却一路延伸到画外；
+       地平线   真实曲率 d²/(2R) 开始看得出来，地球的边从下方括上来；
+       天空     地平线那层雾霭随高度淡掉，露出星空。
+
+     同一套几何在不同比例下自动呈现这四种变化，不需要另画一套远景。 */
+  var ASC = { at: TL.ascendAt, ms: TL.ascendMs, from: 0.9, to: 420 }
+  function ascendK(t) { return clamp01((t - ASC.at) / ASC.ms) }
+  /** 轿厢标高（km）：前 1/4 是起步，后半段明显加速——升起来要有推力感 */
+  function carKmAt(t) { return lerp(ASC.from, ASC.to, Math.pow(ascendK(t), 1.45)) }
+  /** 可见高度（km）：组装期 5.4→14；上升期快速拉到 560 km。
+      前段拉得快是有意的——"地面在往下掉"正是起升那一刻的体感；
+      后段慢下来，才看得清地球的弧和那根一直伸到轨道外的缆索。 */
+  function spanAt(t) {
+    var builtK = clamp01(((t - TL.elevAt) / TL.elevSeg) / ELEV.segs)
+    var base = 5.4 + 8.6 * ease(builtK)
+    var ak = ascendK(t)
+    return ak <= 0 ? base : lerp(base, 560, Math.pow(ak, 0.62))
+  }
+  /** 标尺步长：比例跨了 100 倍，刻度必须是"整数档"而不是写死 2 km */
+  function rulerStep(span) {
+    var steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+    for (var i = 0; i < steps.length; i++) if (span / steps[i] <= 7) return steps[i]
+    return 2000
+  }
+  /** 桁架半径随高度收分：这是"往上跑远"最省笔墨的表达 */
+  function railR(y) {
+    var k = clamp01((y - ELEV.baseY) / (ELEV.topY - ELEV.baseY))
+    return ELEV.railR0 + (ELEV.railR1 - ELEV.railR0) * Math.pow(k, 0.72)
+  }
+  var CORNER_SIGN = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+
+  var elev = { font: '' }
+  function drawElevator(t) {
+    var cv = el.elevCanvas
+    var w = cv.clientWidth, h = cv.clientHeight
+    if (w === 0 || h === 0) return
+    var dpr = Math.min(2, window.devicePixelRatio || 1)
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr)
+    }
+    var ctx = cv.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+
+    var raw = (t - TL.elevAt) / TL.elevSeg          // 已写入的节数（含小数）
+    if (raw <= 0) return
+    var built = Math.min(ELEV.segs, raw)
+    var segsDone = Math.min(ELEV.segs, Math.floor(raw))
+    var frac = clamp01(raw - segsDone)
+    var topNow = ELEV.baseY + built * ELEV.segH
+    var complete = segsDone >= ELEV.segs
+    var hero = ease(clamp01((t - TL.heroAt) / TL.heroMs))
+    if (elev.font === '') elev.font = '7px ' + getComputedStyle(document.body).fontFamily
+
+    /* ── 1. 星空：只在画面上半部，横向缓慢漂移；越往上升越亮 ─────────── */
+    var ak0 = ascendK(t)
+    var hazeA = clamp01(1 - carKmAt(t) / 190)
+    for (var st = 0; st < 120; st++) {
+      var stx = (rnd(st, 5) * w + t * 0.0032) % w
+      var sty = rnd(st, 9) * h * 0.5
+      var sta = (0.2 + rnd(st, 13) * 0.62) * clamp01(1 - sty / (h * 0.62)) * (1 + ak0 * 0.7)
+      if (sta <= 0.03) continue
+      ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, sta).toFixed(3) + ')'
+      ctx.fillRect(stx, sty, rnd(st, 17) > 0.86 ? 2 : 1, 1)
+    }
+
+    /* ── 2. 镜头 ──────────────────────────────────────────────────────
+       地面线固定，可见高度从 5.4 km 一路拉到 1400 km：横向还要再乘一个 up
+       系数（越高越窄），因为它是往天上跑远的，不是贴在纸上的竖线。 */
+    var groundY = h * 0.80
+    var span = spanAt(t)
+    var S = (groundY - h * 0.05) / span
+    var cx = w * lerp(0.46, 0.5, ease(clamp01((t - TL.heroAt) / TL.heroMs)))
+    var ang = 0.5 + t * 0.00009 + 0.04 * Math.sin(t / 3100) + 0.22 * ease(clamp01((t - TL.heroAt) / TL.heroMs))
+    var F = 14
+    function p3(x, y, z) {
+      var X = x * Math.cos(ang) + z * Math.sin(ang)
+      var Z = -x * Math.sin(ang) + z * Math.cos(ang)
+      var q = F / (F + Z)
+      var up = 1 / (1 + Math.max(0, y) * 0.022)
+      return [cx + X * q * up * S, groundY - y * S * q, q * up]
+    }
+    var hero = ease(clamp01((t - TL.heroAt) / TL.heroMs))
+
+    /* ── 3. 地面 / 地球：低空是透视网格，升高之后是地球的弧边 ───────────
+       曲率用真实近似 d²/(2R)：横向 d 公里的地表比塔基低这么多。比例拉大之后
+       它自然显出来——同一套画法，从"一片平地"变成"一颗行星的边"。 */
+    var R_EARTH = 6371
+    function limbY(gx) {
+      var dxKm = ((gx / 32) - 0.5) * (w / S)
+      return groundY - (dxKm * dxKm) / (2 * R_EARTH) * S
+    }
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, h)
+    for (var gx = 0; gx <= 32; gx++) ctx.lineTo(gx / 32 * w, limbY(gx))
+    ctx.lineTo(w, h)
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(255,255,255,.05)'
+    ctx.fill()
+    // 地球的边：亮线 + 贴着它往上一层大气辉光带。这是"从太空回看地球"的标志，
+    // 也是上升段唯一能把画面下半部填起来的元素。
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.34 + 0.22 * ak0).toFixed(3) + ')'
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    for (var gx2 = 0; gx2 <= 32; gx2++) {
+      if (gx2 === 0) ctx.moveTo(0, limbY(gx2)); else ctx.lineTo(gx2 / 32 * w, limbY(gx2))
+    }
+    ctx.stroke()
+    var atmTop = limbY(0) - 16
+    var ag = ctx.createLinearGradient(0, atmTop, 0, limbY(0) + 2)
+    ag.addColorStop(0, 'rgba(255,255,255,0)')
+    ag.addColorStop(0.7, 'rgba(255,255,255,' + (0.05 + 0.09 * ak0).toFixed(3) + ')')
+    ag.addColorStop(1, 'rgba(255,255,255,' + (0.16 + 0.14 * ak0).toFixed(3) + ')')
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(0, h)
+    for (var gx3 = 0; gx3 <= 32; gx3++) ctx.lineTo(gx3 / 32 * w, limbY(gx3))
+    ctx.lineTo(w, h)
+    ctx.closePath()
+    ctx.clip()
+    ctx.fillStyle = ag
+    ctx.fillRect(0, atmTop, w, 20)
+    ctx.restore()
+    // 低空才画地面透视网格；升上去之后它会让位给地球的弧
+    if (ak0 < 0.3) {
+      var gridA = 1 - ak0 / 0.3
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.06 * gridA).toFixed(3) + ')'
+      for (var gl = -9; gl <= 9; gl++) {
+        ctx.beginPath()
+        ctx.moveTo(cx + gl * w * 0.03, groundY)
+        ctx.lineTo(cx + gl * w * 0.36, h)
+        ctx.stroke()
+      }
+    }
+    // 大气雾霭：地平线往上一层微亮，随高度淡掉。有了它，上方那片黑才读成
+    // "太空"而不是"没画完的背景"；升上去之后它让位给星空。
+    var hz = ctx.createLinearGradient(0, groundY, 0, groundY - h * 0.3)
+    hz.addColorStop(0, 'rgba(255,255,255,' + (0.055 * hazeA).toFixed(4) + ')')
+    hz.addColorStop(0.3, 'rgba(255,255,255,' + (0.022 * hazeA).toFixed(4) + ')')
+    hz.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = hz
+    ctx.fillRect(0, groundY - h * 0.3, w, h * 0.3)
+
+    /* ── 4. 云带：低空是对流层，再往上给平流层与中间层各一道。上升时它们
+       依次掠过画面，是"正在穿过大气"最直接的证据。 */
+    var CLOUDS = [1.5, 2.7, 4.4, 12, 85, 300]
+    for (var ci2 = 0; ci2 < CLOUDS.length; ci2++) {
+      var cyy = groundY - CLOUDS[ci2] * S
+      if (cyy < 4 || cyy > groundY - 4) continue
+      var cwd = w * (0.5 + 0.42 * rnd(ci2, 23))
+      var cxo = w * 0.5 + (rnd(ci2, 29) - 0.5) * w * 0.46
+      var cg = ctx.createLinearGradient(0, cyy - 5, 0, cyy + 5)
+      cg.addColorStop(0, 'rgba(255,255,255,0)')
+      cg.addColorStop(0.5, 'rgba(255,255,255,' + (0.11 * (0.4 + 0.6 * hazeA)).toFixed(3) + ')')
+      cg.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.fillStyle = cg
+      ctx.fillRect(cxo - cwd / 2, cyy - 5, cwd, 10)
+    }
+
+    /* 亮线走两遍：先一遍粗而淡的做辉光，再一遍细而实的做本体。线框图上这是
+       "磷光"的来源，也是单色方案下唯一能拉开层次的手段。 */
+    function strokePts(pts, close, a, wd, col) {
+      if (a <= 0.004) return
+      var path = function () {
+        ctx.beginPath()
+        for (var i = 0; i < pts.length; i++) {
+          if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]); else ctx.lineTo(pts[i][0], pts[i][1])
+        }
+        if (close) ctx.closePath()
+      }
+      if (a >= 0.5 && col === undefined) {
+        path()
+        ctx.strokeStyle = 'rgba(255,255,255,' + (a * 0.18).toFixed(3) + ')'
+        ctx.lineWidth = (wd || 1) * 3.5
+        ctx.stroke()
+      }
+      path()
+      ctx.strokeStyle = col || 'rgba(255,255,255,' + a.toFixed(3) + ')'
+      ctx.lineWidth = wd || 1
+      ctx.stroke()
+    }
+    function poly3(list, close, a, wd, col) {
+      var pts = []
+      for (var i = 0; i < list.length; i++) pts.push(p3(list[i][0], list[i][1], list[i][2]))
+      strokePts(pts, close, a, wd, col)
+    }
+    function line3(a2, b4, a, wd, col) { poly3([a2, b4], false, a, wd, col) }
+    /** 长方体：舱体、配重、集装箱都是"宽高不等"的盒子，正方体不够用 */
+    function box(cxx, cyy, czz, sx, sy, sz, a, wd) {
+      var hx = sx / 2, hy = sy / 2, hz = sz / 2
+      var v = [[-hx, -hy, -hz], [hx, -hy, -hz], [hx, -hy, hz], [-hx, -hy, hz],
+        [-hx, hy, -hz], [hx, hy, -hz], [hx, hy, hz], [-hx, hy, hz]]
+      var p = []
+      for (var i = 0; i < 8; i++) p.push([cxx + v[i][0], cyy + v[i][1], czz + v[i][2]])
+      var ed = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
+      for (var e = 0; e < ed.length; e++) line3(p[ed[e][0]], p[ed[e][1]], a, wd)
+    }
+    function cube(cxx, cyy, czz, s, a, wd) { box(cxx, cyy, czz, s, s, s, a, wd) }
+    function hexRing(y, rad) {
+      var pts = []
+      for (var i = 0; i < 6; i++) {
+        var th = i * Math.PI / 3 + 0.26
+        pts.push([Math.cos(th) * rad, y, Math.sin(th) * rad])
+      }
+      return pts
+    }
+    /** 四根立柱：从中部采样，收分就成了一条斜线而不是折线 */
+    function columns(a, toY) {
+      for (var ci = 0; ci < 4; ci++) {
+        var pts = []
+        for (var q2 = 0; q2 <= 10; q2++) {
+          var yy = ELEV.baseY + (toY - ELEV.baseY) * q2 / 10
+          var rr2 = railR(Math.min(yy, ELEV.topY))
+          pts.push([CORNER_SIGN[ci][0] * rr2, yy, CORNER_SIGN[ci][1] * rr2])
+        }
+        poly3(pts, false, a, 1.2)
+      }
+    }
+    function ringAt(y, a, wd) {
+      var rr3 = railR(Math.min(y, ELEV.topY))
+      var pts = []
+      for (var q3 = 0; q3 < 4; q3++) pts.push([CORNER_SIGN[q3][0] * rr3, y, CORNER_SIGN[q3][1] * rr3])
+      poly3(pts, true, a, wd || 1)
+    }
+
+    /* ── 5. 幽灵轮廓：整座电梯的完整线框先铺满 ──────────────────────── */
+    columns(GHOST, ELEV.topY)
+    for (var gs = 1; gs <= ELEV.segs; gs++) ringAt(ELEV.baseY + gs * ELEV.segH, GHOST)
+    line3([-ELEV.trackR, ELEV.baseY, 0], [-ELEV.trackR, ELEV.topY, 0], GHOST * 1.3, 1)
+    line3([ELEV.trackR, ELEV.baseY, 0], [ELEV.trackR, ELEV.topY, 0], GHOST * 1.3, 1)
+    poly3(hexRing(ELEV.baseY, ELEV.stationR), true, GHOST, 1)
+    box(0, ELEV.weightY, 0, 2.1, 1.5, 2.1, GHOST, 1)
+    line3([-0.12, ELEV.weightY + 0.8, 0], [-0.05, ELEV.tetherTop, 0], GHOST, 1)
+    line3([0.12, ELEV.weightY + 0.8, 0], [0.05, ELEV.tetherTop, 0], GHOST, 1)
+
+    /* ── 6. 基座站：六边形平台 + 底裙 + 支柱 + 着陆坪 + 同心灯环 ─────── */
+    var baseK = clamp01((t - TL.elevAt) / 720)
+    if (baseK > 0) {
+      var br = ELEV.stationR * easeOut(baseK)
+      poly3(hexRing(ELEV.baseY, br), true, 0.85 * baseK, 1.3)
+      poly3(hexRing(ELEV.baseY - 0.55, br * 0.84), true, 0.5 * baseK, 1)
+      for (var hi = 0; hi < 6; hi++) {
+        var th1 = hi * Math.PI / 3 + 0.26
+        var c1 = Math.cos(th1), s1 = Math.sin(th1)
+        line3([c1 * br, ELEV.baseY, s1 * br], [c1 * br * 0.84, ELEV.baseY - 0.55, s1 * br * 0.84], 0.6 * baseK, 1)
+        line3([c1 * br * 0.84, ELEV.baseY - 0.55, s1 * br * 0.84], [c1 * br * 1.5, 0.02, s1 * br * 1.5], 0.35 * baseK, 1)
+        cube(c1 * br * 1.12, ELEV.baseY + 0.05, s1 * br * 1.12, 0.34, 0.6 * baseK, 1)
+      }
+      // 同心灯环：慢速呼吸，和扫描带同一个节拍
+      for (var lr = 0; lr < 2; lr++) {
+        var rr4 = br * (0.42 + lr * 0.34)
+        var lp2 = []
+        for (var lq = 0; lq <= 24; lq++) {
+          var la = lq / 24 * Math.PI * 2
+          lp2.push([Math.cos(la) * rr4, ELEV.baseY + 0.02, Math.sin(la) * rr4])
+        }
+        poly3(lp2, true, (0.3 + 0.18 * Math.sin(t / 700 + lr)) * baseK, 1)
+      }
+      // 基座站的余辉：比例一拉远它就只剩一个点，得给个光晕，"我从哪来"才看得见
+      if (ak0 > 0.05) {
+        var bgp = p3(0, ELEV.baseY, 0)
+        var bgl = ctx.createRadialGradient(bgp[0], bgp[1], 0, bgp[0], bgp[1], 14)
+        bgl.addColorStop(0, 'rgba(255,255,255,.5)')
+        bgl.addColorStop(0.35, 'rgba(255,255,255,.16)')
+        bgl.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = bgl
+        ctx.beginPath(); ctx.arc(bgp[0], bgp[1], 14, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+
+    /* ── 7. 塔身：逐节写入。正在写的那一节四条边依次画出，斜撑后补 ───── */
+    for (var si = 0; si < ELEV.segs; si++) {
+      var y0 = ELEV.baseY + si * ELEV.segH
+      var y1 = y0 + ELEV.segH
+      var solid = si < segsDone ? 1 : si === segsDone ? frac : 0
+      if (solid <= 0) continue
+      var r0 = railR(y0), r1 = railR(y1)
+      if (si < segsDone) {
+        ringAt(y1, 0.5, 1)
+        for (var fi = 0; fi < 4; fi++) {
+          var fa = CORNER_SIGN[fi], fb = CORNER_SIGN[(fi + 1) % 4]
+          line3([fa[0] * r0, y0, fa[1] * r0], [fb[0] * r1, y1, fb[1] * r1], 0.4, 1)
+          line3([fb[0] * r0, y0, fb[1] * r0], [fa[0] * r1, y1, fa[1] * r1], 0.4, 1)
+        }
+      } else {
+        for (var ei = 0; ei < 4; ei++) {
+          var ek = clamp01(frac * 4 - ei)
+          if (ek <= 0) continue
+          var ea = CORNER_SIGN[ei], eb = CORNER_SIGN[(ei + 1) % 4]
+          var ey = lerp(0, 1, ek)
+          line3([ea[0] * lerp(r0, r1, ey), lerp(y0, y1, ey), ea[1] * lerp(r0, r1, ey)],
+            [eb[0] * lerp(r0, r1, ey), lerp(y0, y1, ey), eb[1] * lerp(r0, r1, ey)],
+            0.6 * Math.min(1, ek * 3), 1.3)
+        }
+        var bf = clamp01((frac - 0.72) / 0.28)
+        if (bf > 0) {
+          for (var fj = 0; fj < 4; fj++) {
+            var ga2 = CORNER_SIGN[fj], gb = CORNER_SIGN[(fj + 1) % 4]
+            var byTop = lerp(y0, y1, bf)
+            line3([ga2[0] * r0, y0, ga2[1] * r0], [gb[0] * railR(byTop), byTop, gb[1] * railR(byTop)], 0.36, 1)
+            line3([gb[0] * r0, y0, gb[1] * r0], [ga2[0] * railR(byTop), byTop, ga2[1] * railR(byTop)], 0.36, 1)
+          }
+        }
+      }
+    }
+    columns(0.75, topNow)
+
+    /* ── 8. 中央导轨：两根竖轨 + 横档。这是"天梯铁路"，所以最亮 ──────── */
+    line3([-ELEV.trackR, ELEV.baseY, 0], [-ELEV.trackR, topNow, 0], 0.95, 1.4)
+    line3([ELEV.trackR, ELEV.baseY, 0], [ELEV.trackR, topNow, 0], 0.95, 1.4)
+    for (var ry2 = ELEV.baseY; ry2 <= topNow + 0.001; ry2 += ELEV.rungStep) {
+      line3([-ELEV.trackR, ry2, 0], [ELEV.trackR, ry2, 0], 0.46, 1)
+    }
+
+    /* ── 9. 锁扣闪光：刚写完的那一节闪一下，并向外扩一圈冲击环 ───────── */
+    var lockAge = t - (TL.elevAt + segsDone * TL.elevSeg)
+    if (!complete && lockAge >= 0 && lockAge < 320) {
+      var fl = 1 - lockAge / 320
+      var fy = ELEV.baseY + segsDone * ELEV.segH
+      ringAt(fy, fl, 1.8)
+      var lp = p3(0, fy, 0)
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * fl).toFixed(3) + ')'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(lp[0] - (20 + 56 * (1 - fl)), lp[1])
+      ctx.lineTo(lp[0] + (20 + 56 * (1 - fl)), lp[1])
+      ctx.stroke()
+      var pr = 0.25 + 1.5 * (1 - fl)
+      var pulse = []
+      for (var pq = 0; pq <= 24; pq++) {
+        var pa = pq / 24 * Math.PI * 2
+        pulse.push([Math.cos(pa) * pr, fy, Math.sin(pa) * pr])
+      }
+      poly3(pulse, true, 0.5 * fl, 1)
+      for (var sp = 0; sp < 6; sp++) {
+        var sa = rnd(segsDone * 6 + sp, 17) * Math.PI * 2
+        var sr = 8 + 44 * (1 - fl)
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * fl).toFixed(3) + ')'
+        ctx.beginPath()
+        ctx.moveTo(lp[0], lp[1])
+        ctx.lineTo(lp[0] + Math.cos(sa) * sr, lp[1] + Math.sin(sa) * sr * 0.55)
+        ctx.stroke()
+      }
+    }
+
+    /* ── 10. 爬升舱：组装期停在基座上待命，起升后沿缆索射上去 ──────────
+       这一块是"能载人的电梯"最直接的证据，所以尺寸给到明显超过桁架；上升段
+       它还会拖出一条速度尾迹，那是"在动"最直接的信号。 */
+    var climbOn = segsDone >= 2 && ascendK(t) >= 0
+    if (climbOn) {
+      var carKm = carKmAt(t)
+      var cy3 = carKm
+      var BW = 0.95, BH = 1.5, BD = 0.8
+      // 比例一拉大，舱体本身只剩零点几个像素——那就该画成一个亮点加辉光，
+      // 而不是硬画一个看不见的盒子。上升段的"轿厢"就是这颗亮点。
+      var carPx = BW * S * (1 / (1 + Math.max(0, carKm) * 0.022))
+      if (carPx < 4) {
+        var cp = p3(0, cy3, 0)
+        var gl = ctx.createRadialGradient(cp[0], cp[1], 0, cp[0], cp[1], 9)
+        gl.addColorStop(0, 'rgba(255,255,255,.95)')
+        gl.addColorStop(0.3, 'rgba(255,255,255,.35)')
+        gl.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = gl
+        ctx.beginPath(); ctx.arc(cp[0], cp[1], 9, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#fff'
+        ctx.beginPath(); ctx.arc(cp[0], cp[1], 1.8, 0, Math.PI * 2); ctx.fill()
+        // 尾迹：轿厢下面拖一条，长度随速度
+        var tailPx = 26 + 120 * Math.pow(ascendK(t), 1.2)
+        var tg = ctx.createLinearGradient(0, cp[1], 0, cp[1] + tailPx)
+        tg.addColorStop(0, 'rgba(255,255,255,.55)')
+        tg.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.strokeStyle = tg
+        ctx.lineWidth = 1.4
+        ctx.beginPath(); ctx.moveTo(cp[0], cp[1]); ctx.lineTo(cp[0], cp[1] + tailPx); ctx.stroke()
+      } else {
+        box(0, cy3, 0, BW, BH, BD, 1, 1.3)
+        for (var wq = 0; wq < 3; wq++) {
+          var wy2 = cy3 + 0.4 - wq * 0.36
+          line3([-0.3, wy2, BD / 2], [0.3, wy2, BD / 2], 1, 1.8)
+        }
+        for (var cq = 0; cq < 2; cq++) {
+          var cs = cq === 0 ? -1 : 1
+          var cy4 = cy3 + (cq === 0 ? 0.34 : -0.34)
+          line3([cs * BW / 2, cy4, 0], [cs * ELEV.trackR, cy4, 0], 0.85, 1.4)
+        }
+        line3([0, cy3 - BH / 2, 0], [0, cy3 - BH / 2 - 0.12, 0], 0.7, 1)
+        box(0, cy3 - BH / 2 - 0.5, 0, 0.66, 0.7, 0.66, 0.85, 1)
+        if (Math.floor(t / 380) % 2 === 0) {
+          var bc = p3(0, cy3 + BH / 2 + 0.14, 0)
+          ctx.fillStyle = 'rgba(255,255,255,.95)'
+          ctx.beginPath(); ctx.arc(bc[0], bc[1], 1.9, 0, Math.PI * 2); ctx.fill()
+        }
+      }
+      // 速度拖影：结构自下而上掠过。上升的体感八成来自这层。
+      var spd = Math.pow(ascendK(t), 1.1)
+      if (spd > 0.02) {
+        for (var sk2 = 0; sk2 < 34; sk2++) {
+          var skf = ((t * 1.1 + sk2 * 53) % 420) / 420
+          var sky = cy3 - skf * span * 0.42
+          if (sky < 0) continue
+          var skx = (rnd(sk2, 101) - 0.5) * (span * 0.06)
+          line3([skx, sky + span * 0.03, 0], [skx, sky, 0], 0.4 * (1 - skf) * spd, 1)
+        }
+      }
+      // 组装期：基座站上另外两部待命爬升舱
+      if (ascendK(t) <= 0) {
+        cube(-1.15, ELEV.baseY + 0.3, 1.15, 0.36, 0.55, 1)
+        cube(1.15, ELEV.baseY + 0.3, -1.15, 0.36, 0.55, 1)
+      }
+    }
+
+    /* ── 11. 配重 + 缆索出画 ───────────────────────────────────────────── */
+    var cwK = easeOut(clamp01((t - ELEV.topDoneAt) / 520))
+    if (cwK > 0) {
+      box(0, ELEV.weightY, 0, 2.1 * cwK, 1.5 * cwK, 2.1 * cwK, 0.9, 1.3)
+      box(0, ELEV.weightY + 1.0 * cwK, 0, 1.0 * cwK, 0.8 * cwK, 1.0 * cwK, 0.75, 1)
+      for (var aq = 0; aq < 4; aq++) {
+        var aa = aq * Math.PI / 2 + 0.4
+        line3([0, ELEV.weightY, 0], [Math.cos(aa) * 2.5 * cwK, ELEV.weightY, Math.sin(aa) * 2.5 * cwK], 0.55, 1)
+        cube(Math.cos(aa) * 2.5 * cwK, ELEV.weightY, Math.sin(aa) * 2.5 * cwK, 0.5 * cwK, 0.55, 1)
+      }
+    }
+    // 缆索：组装期放到塔顶，上升期一路为轿厢向前铺——它必须始终高过轿厢，
+    // 否则"沿缆索上升"这件事就断了。画成带状而不是一根线：比例拉大之后，
+    // 它是画面上唯一贯穿上下的元素，得撑得住。
+    var tt = clamp01((t - TL.elevRing) / TL.elevRingMs)
+    var carKm0 = carKmAt(t)
+    if (tt > 0) {
+      var reach = Math.max(lerp(ELEV.weightY + 0.8, ELEV.tetherTop, easeOut(tt)), carKm0 + 120)
+      for (var tq3 = -1; tq3 <= 1; tq3++) {
+        var txs = tq3 * 0.13
+        line3([txs, ELEV.weightY + 0.8, 0], [txs * 0.2, reach, 0],
+          tq3 === 0 ? 1 : 0.75, tq3 === 0 ? 1.4 : 1.1)
+      }
+    }
+
+    /* ── 12. 写入前沿：亮点 + 横刻度 ─────────────────────────────────── */
+    if (!complete) {
+      var f = p3(0, topNow, 0)
+      ctx.beginPath(); ctx.arc(f[0], f[1], 2.8, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(f[0] - 46, f[1]); ctx.lineTo(f[0] + 46, f[1]); ctx.stroke()
+    }
+
+    /* ── 12b. 高度标线：横贯画面的一条细线，标出轿厢当前标高 ───────────
+       上升段画面很空，这条线既是数据也是构图——它把"正在爬升"写在了画面上。 */
+    if (ak0 > 0.04) {
+      var amp = p3(0, carKm0, 0)
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.18 + 0.14 * ak0).toFixed(3) + ')'
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(w * 0.04, amp[1]); ctx.lineTo(w * 0.96, amp[1]); ctx.stroke()
+      ctx.font = elev.font
+      ctx.textAlign = 'left'
+      ctx.fillStyle = 'rgba(255,255,255,.55)'
+      ctx.fillText(carKm0.toFixed(carKm0 > 100 ? 0 : 1) + ' km', w * 0.04 + 4, amp[1] - 5)
+    }
+
+    /* ── 13. 高度标尺：刻度随比例换档（跨了 100 倍，写死 2 km 就不对了）── */
+    var rulerX = -span * 0.11
+    var rTop = Math.min(span - span * 0.03, Math.max(ELEV.tetherTop, carKmAt(t) + 120))
+    var rulerA = p3(rulerX, span * 0.02, 0), rulerB = p3(rulerX, rTop, 0)
+    strokePts([rulerA, rulerB], false, 0.34, 1)
+    ctx.font = elev.font
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'right'
+    var rStep = rulerStep(span)
+    for (var mk = 0; mk <= rTop; mk += rStep) {
+      var mka = p3(rulerX, mk, 0), mkb = p3(rulerX + span * 0.012, mk, 0)
+      strokePts([mka, mkb], false, 0.42, 1)
+      if (mk > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,.5)'
+        ctx.fillText(mk >= 1000 ? (mk / 1000) + 'k km' : mk + ' km', mka[0] - 3, mka[1])
+      }
+    }
+
+    /* ── 14. 技术图纸式引线标注（自动避让，不让两行字压在一起）──────── */
+    var carKm2 = carKmAt(t)
+    var notes = []
+    if (baseK > 0.6) notes.push({ p: p3(ELEV.stationR * 1.12, ELEV.baseY + 0.1, ELEV.stationR * 1.12), t: 'BASE STATION', d: 1 })
+    if (climbOn) notes.push({ p: p3(0, carKm2, 0.4), t: 'CLIMBER 01 · ' + carKm2.toFixed(carKm2 > 100 ? 0 : 1) + ' km', d: -1 })
+    if (!complete) notes.push({ p: p3(0, topNow, 0), t: 'GUIDE RAIL ' + String(Math.min(ELEV.segs, segsDone + 1)).padStart(2, '0'), d: 1 })
+    if (cwK > 0.5) notes.push({ p: p3(1.05, ELEV.weightY, 0), t: 'COUNTERWEIGHT', d: 1 })
+    if (tt > 0.4) notes.push({ p: p3(0.06, Math.min(rTop * 0.98, carKm2 + 100), 0), t: 'TETHER → GEO 35,786 km', d: 1 })
+    if (ak0 < 0.4) notes.push({ p: p3(-span * 0.06, CLOUDS[1], 0), t: 'TROPOSPHERE', d: -1 })
+    var shown = []
+    for (var ni = 0; ni < notes.length; ni++) {
+      var np = notes[ni].p
+      if (np[1] > h - 10 || np[1] < 10) continue
+      shown.push({ x: np[0], y: np[1], t: notes[ni].t, d: notes[ni].d, ty: np[1] + (notes[ni].d > 0 ? -9 : 9) })
+    }
+    for (var side = 0; side < 2; side++) {
+      var dd = side === 0 ? 1 : -1
+      var list = []
+      for (var q4 = 0; q4 < shown.length; q4++) if (shown[q4].d === dd) list.push(shown[q4])
+      list.sort(function (a, b) { return a.ty - b.ty })
+      for (var k2 = 1; k2 < list.length; k2++) if (list[k2].ty - list[k2 - 1].ty < 10) list[k2].ty = list[k2 - 1].ty + 10
+      var over = list.length > 0 ? list[list.length - 1].ty - (h - 12) : 0
+      if (over > 0) for (var k3 = 0; k3 < list.length; k3++) list[k3].ty -= over
+    }
+    for (var ni2 = 0; ni2 < shown.length; ni2++) {
+      var it = shown[ni2]
+      var tx = it.x + it.d * 30
+      if (tx < 14 || tx > w - 16) tx = it.x - it.d * 30
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(it.x, it.y); ctx.lineTo(tx, it.ty); ctx.stroke()
+      ctx.fillStyle = 'rgba(255,255,255,.66)'
+      ctx.textAlign = it.d > 0 ? 'left' : 'right'
+      ctx.fillText(it.t, tx + (it.d > 0 ? 2 : -2), it.ty)
+    }
+
+    /* ── 15. 地面脉冲环：从基座站一圈圈扩出去 ────────────────────────── */
+    if (baseK > 0.9) {
+      var gpK = ((t - TL.elevAt) % 2600) / 2600
+      var gpr = 0.6 + gpK * 4.4
+      var gp = []
+      for (var gq = 0; gq <= 36; gq++) {
+        var gqa = gq / 36 * Math.PI * 2
+        gp.push([Math.cos(gqa) * gpr, 0.02, Math.sin(gqa) * gpr])
+      }
+      poly3(gp, true, 0.3 * (1 - gpK), 1)
+    }
+
+    /* ── 16. 扫描带：自下而上反复扫，像在读这份模型 ───────────────────── */
+    var scanK = ((t - TL.elevAt) % 2600) / 2600
+    var scanY = h * (1 - scanK)
+    var grad = ctx.createLinearGradient(0, scanY - 22, 0, scanY + 22)
+    grad.addColorStop(0, 'rgba(255,255,255,0)')
+    grad.addColorStop(0.5, 'rgba(255,255,255,.05)')
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, scanY - 22, w, 44)
+    ctx.strokeStyle = 'rgba(255,255,255,.12)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(w, scanY); ctx.stroke()
+  }
+
+  /* ── 电梯面板的读数层（DOM，不是 canvas）─────────────────────────────── */
+  var elevTicks = []
+  for (var et = 0; et < ELEV.segs; et++) {
+    var eti = document.createElement('i')
+    el.elevTicks.appendChild(eti)
+    elevTicks.push(eti)
+  }
+  function renderElevHud(t) {
+    var raw = (t - TL.elevAt) / TL.elevSeg
+    var built = Math.max(0, Math.min(ELEV.segs, raw))
+    var segsDone = Math.min(ELEV.segs, Math.floor(raw))
+    var complete = segsDone >= ELEV.segs
+    var tetherT = clamp01((t - TL.elevRing) / TL.elevRingMs)
+    var hero = t >= TL.heroAt
+
+    for (var i = 0; i < elevTicks.length; i++) {
+      var on = i < segsDone
+      var now = i === segsDone && !complete
+      var want = on ? 'on' : now ? 'now' : ''
+      if (elevTicks[i].className !== want) elevTicks[i].className = want
+    }
+    var alt = Math.max(0, ELEV.baseY + built * ELEV.segH)
+    var carKm = carKmAt(t)
+    var ascending = ascendK(t) > 0
+    el.elevSeg.textContent = String(segsDone).padStart(2, '0') + ' / ' + ELEV.segs
+    // 上升段这个数字要报轿厢标高，而不是塔高——它才是"升到哪了"
+    el.elevAlt.textContent = (ascending ? carKm : alt).toFixed(carKm > 100 ? 0 : 2) + ' km'
+    el.elevTen.textContent = (0.18 + built * 0.012).toFixed(2) + ' kN'
+    el.elevBar.style.width = (built / ELEV.segs * 100).toFixed(1) + '%'
+    var climberOn = segsDone >= 3
+    el.elevClim.textContent = !climberOn ? 'STANDBY' : ascending
+      ? 'ASCENT ' + carKm.toFixed(carKm > 100 ? 0 : 1) + ' km' : 'HOLD AT BASE'
+    el.elevClim.className = 'eh-v ' + (!climberOn ? '' : ascending ? 'warn' : 'ok')
+    el.elevRing.textContent = tetherT <= 0 ? 'STOWED' : tetherT < 1 ? 'DEPLOYING' : '→ GEO'
+    el.elevRing.className = 'eh-v ' + (tetherT >= 1 ? 'ok' : tetherT > 0 ? 'warn' : '')
+    el.elevTag.textContent = hero ? 'REAL-TIME ASSEMBLY · COMPLETE' : 'REAL-TIME ASSEMBLY'
+
+    // 分段日志：最近三节，内容由节号确定性推出，不随帧变化
+    var lines = []
+    if (ascending) {
+      lines.push('ASCENT ' + carKm.toFixed(0) + ' km · VELOCITY ' +
+        (0.4 + 3.1 * Math.pow(ascendK(t), 1.2)).toFixed(2) + ' km/s · TETHER NOMINAL')
+    } else if (complete && tetherT > 0) {
+      lines.push('TETHER ' + (tetherT >= 1 ? 'DEPLOYED → GEO 35,786 km' : 'PAYING OUT…'))
+      lines.push('CLIMBER 01 HOLD AT BASE · PAYLOAD ' + (12.4).toFixed(1) + ' t')
+    }
+    for (var k = segsDone; k > Math.max(0, segsDone - 2); k--) {
+      var lockAt = TL.elevAt + k * TL.elevSeg
+      var age = t - lockAt
+      var mark = age < 500 ? '▶' : '·'
+      lines.push(mark + ' SEG ' + String(k).padStart(2, '0') + ' LOCKED · TENSION ' +
+        (0.18 + k * 0.012).toFixed(2) + ' kN · CRC ' + hex(crc32('SEG' + k, 0), 8))
+    }
+    el.elevLog.innerHTML = lines.slice(0, 3).map(function (s) {
+      return s.charAt(0) === '▶' ? '<b>' + s.slice(1) + '</b>' : s
+    }).join('\n')
+    el.elevFoot.textContent = complete
+      ? 'TETHER TENSION NOMINAL · ' + ELEV.segs + ' / ' + ELEV.segs + ' SEGMENTS LOCKED'
+      : 'TETHER TENSION NOMINAL · CLIMBER 03 ASCENDING'
+  }
+
+  /* ══ render(t) ══════════════════════════════════════════════════════════ */
+
+  function clockAt(t) {
+    var s = BASE_CLOCK + Math.floor(t / 1000)
+    return String(Math.floor(s / 3600) % 24).padStart(2, '0') + ':' +
+      String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')
+  }
+
+  /* 资源树：整棵树先以幽灵行铺满，扫描前沿逐行点亮，亮线跟着前沿走。
+     和电梯的"幽灵轮廓 → 逐节写入"是同一套语言：屏上永远是满的，变化的是
+     哪一部分已被确认。 */
+  var TREE_ROW_H = 15
+  function renderTree(t) {
+    var scanF = (t - TL.treeAt) / TL.treeRate       // 连续小数，不是整数行
+    if (scanF < 0) scanF = 0
+    var frontier = Math.min(TREE.length, scanF)
+    var done = Math.floor(frontier)
+    var routeLocked = t >= TL.routeAt
+    var reaching = t >= TL.scriptAt && !routeLocked
+    var scanned = 0, locked = 0
+    for (var i = 0; i < TREE.length; i++) {
+      var row = treeRows[i]
+      if (t >= TL.treeAt && !row.in) { row.el.classList.add('in'); row.in = true }
+      if (!row.in) continue
+      var isTarget = i === TARGET_ROW
+      var state
+      if (i < frontier && isTarget && reaching) state = 'hit'
+      else if (i < frontier && isTarget && routeLocked) state = 'lock'
+      else if (i < frontier - 1.5) state = 'ok'
+      else if (i < frontier) state = 'scan'
+      else state = 'ghost'
+      if (state !== row.state) {
+        row.el.className = 'trow in ' + state
+        row.state = state
+        row.st.textContent = state === 'ok' ? 'OK' : state === 'scan' ? '···' :
+          state === 'ghost' ? '···' : state === 'lock' ? 'LOCK' : 'REACH'
+      }
+      if (i < frontier) scanned++
+      if (state === 'ok' || state === 'lock') locked++
+      // 刚被扫过的那一行闪一下：单色屏里"刚写入"只能靠亮度说
+      var age = t - (TL.treeAt + i * TL.treeRate)
+      var flash = i < frontier && age >= 0 && age < 200 ? 1 - age / 200 : 0
+      var want = flash > 0 ? 'rgba(255,255,255,' + (0.18 * flash).toFixed(3) + ')' : ''
+      if (row.flash !== want) { row.el.style.backgroundColor = want; row.flash = want }
+    }
+    el.treeCount.textContent = String(scanned).padStart(3, '0')
+    el.treeLock.textContent = String(locked).padStart(3, '0')
+    el.treeCrc.textContent = hex(crc32('tree' + scanned + locked, 0), 8)
+    // 扫描亮线：跟着前沿连续下移，扫完就淡出
+    var live = frontier < TREE.length ? 1 : 0
+    el.treeScan.style.opacity = live ? '1' : '0'
+    if (live) el.treeScan.style.top = (3 + frontier * TREE_ROW_H).toFixed(1) + 'px'
+  }
+
+  // SCRIPTING：先自报家门，两行同样的指令，第一次 404，第二次拿到路由
+  function esc(s) { return s.replace(/</g, '&lt;') }
+  function renderScript(t) {
+    var out = []
+    function typed(text, at, cls) {
+      if (t < at) return
+      var n = Math.min(text.length, Math.floor((t - at) / TL.typeRate))
+      out.push('<div class="sl ' + cls + '">' + esc(text.slice(0, n)) +
+        (n < text.length ? '<span class="cursor"></span>' : '') + '</div>')
+    }
+    typed('> LOCAL SYSTEM DEBUGGER v1.14 — INIT OK', TL.openAt, 'dim')
+    typed('> TARGET: SPACE ELEVATOR · SEG 07', TL.openAt + 620, 'dim')
+    typed('> TRY TO CONNECTION ROUTER CONTROL MODULE', TL.scriptAt, 'dim')
+    if (t >= TL.errAt) {
+      out.push('<div class="sl err">! ERR 404 — NO ROUTE TO ROUTER CONTROL MODULE</div>')
+      out.push('<div class="sl dim">  &gt; retry with 550C-ROOT · AUTH FORCE</div>')
+    }
+    typed('> TRY TO CONNECTION ROUTER CONTROL MODULE', TL.retryAt, 'warn')
+    if (t >= TL.routeAt) {
+      out.push('<div class="sl ok">+ ROUTER CONTROL MODULE LOCKED · WRITE PERMISSION GRANTED</div>')
+      out.push('<div class="sl dim">  &gt; STREAM OVERRIDE PAYLOAD → SPACE ELEVATOR SEG 07</div>')
+    }
+    el.scriptBody.innerHTML = out.join('')
+  }
+
+  /* 进度：显式分段爬升 [起点, 起值, 终值, 终点]。
+     早先写成"各里程碑各算一次再 Math.max"，而 lerp(from,to,0) 恒等于 from——
+     于是最后一段的 97 从 t=0 就成了地板，整段动画一开场就是 97%。分段表不会
+     有这个陷阱：t 落在哪一段就只算哪一段。 */
+  var PROGRESS = [
+    [TL.treeAt, 0, 62, 3100],        // 资源扫描 + 第一次连接失败
+    [3100, 62, 88, TL.routeAt],      // 重试成功，拿到路由写权限
+    [TL.topoAt, 88, 92, 7900],       // 拓扑逐个子系统点亮
+    [7900, 92, 97, 9600],            // 塔身组装 + 轨道环展开
+    [TL.fullAt - 700, 97, 100, TL.fullAt]
+  ]
+  function progressAt(t) {
+    var p = 0
+    for (var i = 0; i < PROGRESS.length; i++) {
+      var a = PROGRESS[i][0], from = PROGRESS[i][1], to = PROGRESS[i][2], end = PROGRESS[i][3]
+      if (t <= a) break
+      if (t >= end) { p = to; continue }
+      p = lerp(from, to, ease((t - a) / (end - a)))
+      break
+    }
+    return Math.min(100, p)
+  }
+
+  /* 读数：参考图里最显眼的那条宽进度条 ＋ 代码墙页脚的一条 KV。
+     原先这些东西散在一个我自己加的"遥测面板"里，参考图没有那个面板。 */
+  function renderReadouts(t) {
+    var p = progressAt(t)
+    el.bigPct.textContent = Math.round(p) + '%'
+    el.bigBar.style.width = p.toFixed(2) + '%'
+    var routed = t >= TL.routeAt
+    el.telRouter.textContent = routed ? 'LOCKED · RCM' : (t >= TL.errAt ? 'NO ROUTE 404' : 'HANDSHAKE…')
+    el.telRouter.className = routed ? 'ok' : 'bad'
+    var rate = routed ? (0.4 + p / 100 * 11.4) : 0
+    el.telRate.textContent = rate.toFixed(1) + ' GB/s'
+    el.telPkt.textContent = String(Math.round(p * 41207)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    el.telRetry.textContent = t >= TL.errAt ? '1' : '0'
+  }
+
+  /* 代码墙：连续流动。
+     一次跳一整行会读成幻灯片；这里让窗口取 floor 之后把小数部分做成 translateY，
+     于是每一条都在缓慢上移、新的那个从底边挤进来——同一段时间里内容一样，观感
+     完全不同。池子多两行是为了盖住位移时的上下缺口。 */
+  function renderCode(t) {
+    var rows = codeRows.length
+    var f = (t - TL.codeAt) / TL.codeRate        // codeAt 之前为负：窗口里全是旧行
+    var base = Math.floor(f)
+    var frac = f - base
+    var first = base - rows + 1                  // 视觉第一行对应的序号
+    if (el.codeBody.dataset.first !== String(first) || el.codeBody.dataset.rows !== String(rows)) {
+      el.codeBody.dataset.first = String(first)
+      el.codeBody.dataset.rows = String(rows)
+      var crc = 0
+      for (var i = 0; i < rows; i++) {
+        var seq = first + i
+        var text = lineAt(seq)
+        codeRows[i].textContent = text
+        codeRows[i].className = 'cl' + (seq > base - 5 && seq <= base ? ' hl'
+          : seq < 0 ? ' old' : seq % 13 === 5 ? ' cm' : ' w')
+        crc = crc32(text, crc)
+      }
+      el.codeCrc.textContent = hex(crc, 8)
+      var wrote = base < 0 ? 0x0012C000 : Math.min(0x0012C000, (base + 1) * 32)
+      el.codeWrote.textContent = '0x' + hex(wrote, 8)
+      var tail = []
+      for (var sh = 24; sh >= 0; sh -= 8) tail.push(hex((crc >>> sh) & 0xFF, 2))
+      el.codeTail.textContent = tail.join(' ')
+    }
+    el.codeBody.style.transform = 'translateY(' + (-frac * CODE_LINE_H).toFixed(2) + 'px)'
+    el.codeHead.style.opacity = t >= TL.codeAt ? '0.9' : '0'
+  }
+
+  function renderTopo(t) {
+    var done = 0
+    for (var i = 0; i < BOX.length; i++) {
+      var appear = TL.topoAt + i * TL.topoStep
+      var o = topo.box[BOX[i].id]
+      var lit = t >= appear + 140
+      if (o.g.classList.contains('lit') !== lit) o.g.classList.toggle('lit', lit)
+      if (lit) done++
+      var f = clamp01((t - appear - 140) / 260)
+      o.fill.style.opacity = (lit ? 0.75 : 0).toFixed(2)
+      o.fill.setAttribute('height', (BOX[i].h * (lit ? 1 : f)).toFixed(1))
+      o.st.style.opacity = lit ? '0.85' : '0'
+    }
+    for (var li = 0; li < topo.ln.length; li++) {
+      var on = t >= TL.topoAt + li * TL.topoStep * 0.7 + 160
+      if (topo.ln[li].classList.contains('lit') !== on) topo.ln[li].classList.toggle('lit', on)
+    }
+    el.topoTag.textContent = done + ' / ' + BOX.length + ' SUBSYSTEMS'
+  }
+
+  function renderTE(t) {
+    var on = t >= TL.treeAt
+    var n = Math.floor((t - TL.treeAt) / 220)
+    for (var i = 0; i < teRows.length; i++) {
+      var lit = on && i < n
+      var row = teRows[i]
+      if (row.el.classList.contains('on') !== lit) row.el.classList.toggle('on', lit)
+      var want = lit ? 'OK' : '···'
+      if (row.s.textContent !== want) row.s.textContent = want
+    }
+    // 四路示波器：同样按 120ms 节拍
+    var tick = Math.floor(t / 120)
+    var running = t >= TL.treeAt
+    for (var s = 0; s < scopeBars.length; s++) {
+      var base = [0.55, 0.4, 0.7, 0.9][s]
+      var val = 0
+      for (var k = 0; k < scopeBars[s].bars.length; k++) {
+        var v = running ? base * (30 + rnd(tick * 31 + s * 100 + k, 13) * 70) : 6
+        scopeBars[s].bars[k].style.height = v.toFixed(1) + '%'
+        scopeBars[s].bars[k].className = v > 62 ? 'hi' : ''
+        if (k === scopeBars[s].bars.length - 1) val = v
+      }
+      var label = { 0: 'MHz', 1: 'dB', 2: 'TB', 3: 'fps' }[s]
+      var scale = [1180, 26, 12, 60][s]
+      scopeBars[s].val.textContent = (val / 100 * scale).toFixed(0) + ' ' + label
+    }
+  }
+
+  /* 横幅：砸下来。
+     三件事叠出冲击感——过冲回弹的缩放、落点那一瞬的反白闪、以及一条从中心向
+     两侧扫出去的冲击波横线。线性放大只会让人觉得"图出现了"。 */
+  var bannerBump = 0
+  function renderBanners(t) {
+    bannerBump = 0
+    for (var i = 0; i < bannerEls.length; i++) {
+      var b = BANNER[i], o = bannerEls[i]
+      var age = t - b.at
+      var on = age >= 0
+      if (on !== o.on) { o.on = on; o.el.classList.toggle('on', on) }
+      if (!on) { o.el.style.opacity = '0'; continue }
+
+      var s
+      if (age < 230) s = lerp(1.18, 0.982, easeOut(age / 230))
+      else s = lerp(0.982, 1, easeOut(clamp01((age - 230) / 190)))
+      // 落点反白：90ms 内闪两次
+      var inv = age < 110 && Math.floor(age / 36) % 2 === 0
+      o.el.style.background = inv ? '#fff' : 'rgba(255,255,255,.08)'
+      o.el.style.color = inv ? '#010101' : '#fff'
+      o.el.style.textShadow = inv ? 'none' : '0 0 9px rgba(255,255,255,.85)'
+      o.el.style.opacity = String(clamp01(age / 55))
+      o.el.style.transform = 'scale(' + s.toFixed(4) + ')'
+      // 呼吸式的辉光，落定后仍在轻轻跳
+      var pulse = 0.5 + 0.5 * Math.sin((age - 230) / 300)
+      o.el.style.boxShadow = '0 0 ' + (20 + pulse * 18).toFixed(0) + 'px rgba(255,255,255,' +
+        (0.22 + pulse * 0.26).toFixed(2) + '),inset 0 0 22px rgba(255,255,255,.1)'
+      // 冲击波
+      var w = clamp01(age / 430)
+      o.shock.style.transform = 'scaleX(' + easeOut(w).toFixed(4) + ')'
+      o.shock.style.opacity = (1 - w).toFixed(3)
+      // 扫光：必须由 JS 收尾。只靠 .on 上的 CSS 过渡的话，它跑完一次就永远停在
+      // 横幅旁边（translateX(-100%) 紧贴着左边），看起来像一条横贯屏幕的亮带。
+      var swk = clamp01(age / 460)
+      o.sweep.style.transform = 'translateX(' + (-100 + swk * 200).toFixed(1) + '%)'
+      var sweepOn = age < 520
+      o.sweep.style.opacity = sweepOn ? '1' : '0'
+      o.sweep.style.visibility = sweepOn ? 'visible' : 'hidden'
+      // 冲击波同理：跑完就彻底移出绘制树，别只留个 opacity:0
+      o.shock.style.visibility = w < 1 ? 'visible' : 'hidden'
+      // 整屏亮度上抬一下
+      if (age < 190) bannerBump += (1 - age / 190) * 0.5
+    }
+  }
+
+  /* ── 片尾：电梯面板最大化 ──────────────────────────────────────────────
+     位置与尺寸由 t 插值写进 inline style，而不是交给 CSS transition——因为
+     ?at= 抓的是中间帧，过渡动画在 still 模式下会被冻结，量不到真实画面。 */
+  var elevGeo = { normal: null, bench: null }
+  function measureElev() {
+    var p = el.panels.elev
+    if (p.classList.contains('hero')) {
+      p.classList.remove('hero')
+      p.style.position = ''; p.style.left = ''; p.style.top = ''
+      p.style.width = ''; p.style.height = ''
+    }
+    elevGeo.normal = p.getBoundingClientRect()
+    elevGeo.bench = el.bench.getBoundingClientRect()
+    // 扫描亮线要按行高换算位置，行高得实测（字体回退会改它）
+    if (treeRows.length > 0) TREE_ROW_H = treeRows[0].el.offsetHeight || 15
+  }
+
+  function renderHero(t) {
+    var ep = el.panels.elev
+    var hf = ease(clamp01((t - TL.heroAt) / TL.heroMs))
+    if (hf > 0 && elevGeo.normal !== null && elevGeo.bench !== null) {
+      var nb = elevGeo.normal, bb = elevGeo.bench
+      if (!ep.classList.contains('hero')) ep.classList.add('hero')
+      // 相对 #bench 的偏移：常规位置 → 铺满工作台
+      ep.style.position = 'absolute'
+      ep.style.left = lerp(nb.left - bb.left, 0, hf).toFixed(1) + 'px'
+      ep.style.top = lerp(nb.top - bb.top, 0, hf).toFixed(1) + 'px'
+      ep.style.width = lerp(nb.width, bb.width, hf).toFixed(1) + 'px'
+      ep.style.height = lerp(nb.height, bb.height, hf).toFixed(1) + 'px'
+      ep.style.zIndex = '10'
+    } else if (ep.classList.contains('hero')) {
+      ep.classList.remove('hero')
+      ep.style.position = ''; ep.style.left = ''; ep.style.top = ''
+      ep.style.width = ''; ep.style.height = ''
+    }
+  }
+
+  function renderChrome(t) {
+    // 菜单导航：跑到哪一个区块就点亮哪一个
+    var stage = t < TL.treeAt ? 0 : t < TL.scriptAt ? 1 : t < TL.codeAt ? 2 : t < TL.topoAt ? 3 : t < TL.elevAt ? 4 : 5
+    for (var i = 0; i < NAV.length; i++) NAV[i].classList.toggle('on', i === stage)
+    el.clock.textContent = clockAt(t)
+    el.stStage.textContent = ['POWER ON', 'RESOURCE SCAN', 'SCRIPTING', 'CODE STREAM', 'TOPOLOGY', 'ASSEMBLY'][stage]
+    el.stMode.textContent = t >= TL.routeAt ? 'OVERRIDE · FORCE' : t >= TL.scriptAt ? 'NEGOTIATING' : 'READ-ONLY'
+
+    // 面板成形：不是同时淡入，是逐个被"写"出来——clip-path 从左到右擦除，
+    // 擦除前沿留一条亮线。淡入读起来像贴图，擦除读起来像设备在画。
+    var order = ['resource', 'script', 'code', 'topo', 'elev', 'te']
+    for (var p = 0; p < order.length; p++) {
+      var node = el.panels[order[p]]
+      var at = TL.panelsAt + p * TL.wipeStep
+      var k = ease(clamp01((t - at) / TL.wipeMs))
+      if (k > 0 && !node.classList.contains('in')) node.classList.add('in')
+      if (k >= 1) {
+        if (node.dataset.wiped !== '1') {
+          node.dataset.wiped = '1'
+          node.style.clipPath = ''; node.style.webkitClipPath = ''; node.style.boxShadow = ''
+        }
+      } else {
+        node.dataset.wiped = '0'
+        var cp = 'inset(0 ' + ((1 - k) * 100).toFixed(2) + '% 0 0)'
+        node.style.clipPath = cp
+        node.style.webkitClipPath = cp
+        node.style.boxShadow = 'inset 2px 0 12px rgba(255,255,255,' + (0.6 * (1 - k)).toFixed(3) + ')'
+      }
+    }
+
+    // 片尾把电梯面板放大成主镜头
+    renderHero(t)
+
+    // 全屏扫掠带：开机一次，提交前再一次
+    // 高度取钉死的舞台高度（抓帧）或真实视口（播放）
+    var VH = PIN_H > 0 ? PIN_H : window.innerHeight
+    var VW = PIN_W > 0 ? PIN_W : window.innerWidth
+    var sweeps = [[TL.powerOn + 120, TL.powerOn + 120 + 900], [TL.commitAt - 1500, TL.commitAt - 1500 + 900]]
+    var sy = -999, sop = 0
+    for (var s = 0; s < sweeps.length; s++) {
+      var k = seg(t, sweeps[s][0], sweeps[s][1])
+      if (k > 0 && k < 1) { sy = k * (VH + 90) - 45; sop = Math.sin(k * Math.PI) * 0.9 }
+    }
+    el.sweep.style.transform = 'translateY(' + sy.toFixed(1) + 'px)'
+    el.sweep.style.opacity = sop.toFixed(2)
+    el.sweep.style.visibility = sop > 0 ? 'visible' : 'hidden'
+
+    // 故障条：一小段撕裂。位置、宽度、强度都由拍点确定性推出；空闲时整条移出
+    // 绘制树（visibility），否则一次遗漏的复位就会在屏上留下一条横带。
+    var gs = [[TL.routeAt - 70, 90], [TL.banner1, 60], [TL.banner3, 70], [TL.commitAt - 400, 110]]
+    var gop = 0, gy = 0, gx = 0, gw = 0
+    for (var g = 0; g < gs.length; g++) {
+      if (t >= gs[g][0] && t < gs[g][0] + gs[g][1]) {
+        gop = 0.75
+        gy = rnd(g, 3) * VH
+        gx = rnd(g, 13) * VW * 0.62
+        gw = VW * (0.16 + rnd(g, 17) * 0.4)
+      }
+    }
+    el.glitch.style.opacity = gop.toFixed(2)
+    el.glitch.style.top = gy.toFixed(0) + 'px'
+    el.glitch.style.left = gx.toFixed(0) + 'px'
+    el.glitch.style.width = gw.toFixed(0) + 'px'
+    el.glitch.style.transform = 'translateX(' + ((rnd(Math.floor(t / 40), 9) - 0.5) * 10).toFixed(1) + 'px)'
+    el.glitch.style.visibility = gop > 0 ? 'visible' : 'hidden'
+
+    // 字幕
+    var sa = clamp01((t - TL.subAt) / 700)
+    el.subtitle.style.opacity = sa.toFixed(2)
+    el.subtitle.style.transform = 'translateY(' + lerp(10, 0, easeOut(sa)).toFixed(1) + 'px)'
+
+    // 开机黑场 → 亮线扫开（#flash 是黑的，只负责开机）
+    el.flash.style.opacity = (1 - easeOut(seg(t, TL.powerOn, TL.powerOn + 520))).toFixed(3)
+    // 提交瞬间：一次短促的纯白爆闪，然后交给整屏淡出
+    var popIn = clamp01((t - TL.commitAt) / 110)
+    var popOut = 1 - clamp01((t - TL.commitAt - 110) / 620)
+    var pop = popIn * popOut
+    el.pop.style.opacity = pop.toFixed(3)
+
+    /* ── 整屏的"活着" ────────────────────────────────────────────────────
+       极慢的纵向漂移 + 拍点上的横向错位 + 亮度呼吸。这三样加起来才让一块屏读
+       起来是"通着电的"，缺了它们，再好的内容也像一张贴图。 */
+    var roll = Math.sin(t / 8200) * 1.1 + Math.sin(t / 3100) * 0.42
+    var jx = 0, jy = 0
+    for (var ji = 0; ji < JITTER.length; ji++) {
+      var ja = t - JITTER[ji][0]
+      if (ja >= 0 && ja < JITTER[ji][1]) {
+        var jf = 1 - ja / JITTER[ji][1]
+        var jk = Math.floor(t / 33)
+        jx += (rnd(jk, ji * 7 + 3) - 0.5) * 3.6 * jf
+        jy += (rnd(jk, ji * 7 + 11) - 0.5) * 2.4 * jf
+      }
+    }
+    // 塔身每锁一节也抬一下亮度：单色屏里这是"写入成功"唯一的体感来源
+    var lockBump = 0
+    var lockAt2 = TL.elevAt + Math.floor((t - TL.elevAt) / TL.elevSeg) * TL.elevSeg
+    if (t >= lockAt2 && t - lockAt2 < 210 && t > TL.elevAt) lockBump = (1 - (t - lockAt2) / 210) * 0.35
+    var bump = bannerBump + lockBump
+    el.screen.style.transform = 'translate3d(' + jx.toFixed(2) + 'px,' + (roll + jy).toFixed(2) + 'px,0)'
+    el.screen.style.filter = 'brightness(' + (1 + 0.3 * pop + 0.07 * bump).toFixed(3) + ')'
+
+    // 收尾淡出
+    var fade = clamp01((t - TL.fadeAt) / 800)
+    el.screen.style.opacity = (1 - fade).toFixed(3)
+    // 扫描线强度跟着拍点呼吸
+    document.documentElement.style.setProperty('--scan', (0.045 + 0.02 * bump).toFixed(4))
+
+    if (DEBUG) {
+      el.hud.style.display = 'block'
+      var eb = el.panels.elev
+      var er = eb.getBoundingClientRect()
+      var stack = document.elementsFromPoint(Math.round(VW * 0.5), Math.round(VH * 0.62))
+      var top = []
+      for (var si2 = 0; si2 < stack.length && top.length < 4; si2++) {
+        top.push(stack[si2].id || stack[si2].className || stack[si2].tagName)
+      }
+      // 第二个取样点放在片尾那条横向亮带上，用来确认它不是某个残留元素
+      var stack2 = document.elementsFromPoint(Math.round(VW * 0.12), Math.round(VH * 0.105))
+      var top2 = []
+      for (var si3 = 0; si3 < stack2.length && top2.length < 5; si3++) {
+        top2.push(stack2[si3].id || stack2[si3].className || stack2[si3].tagName)
+      }
+      var cs = getComputedStyle(eb)
+      el.hud.textContent = 't=' + Math.round(t) + 'ms  stage=' + stage + '  p=' + progressAt(t).toFixed(1) + '%' +
+        '  vp=' + window.innerWidth + 'x' + window.innerHeight +
+        '  hero=' + clamp01((t - TL.heroAt) / TL.heroMs).toFixed(2) +
+        '\nelev rect=' + Math.round(er.left) + ',' + Math.round(er.top) + ' ' +
+        Math.round(er.width) + 'x' + Math.round(er.height) +
+        ' pos=' + cs.position + ' op=' + cs.opacity + ' disp=' + cs.display + ' vis=' + cs.visibility +
+        ' z=' + cs.zIndex +
+        '\nstack@62%: ' + top.join(' < ') +
+        '\nstack@12%,10.5%: ' + top2.join(' < ')
+    }
+  }
+
+  /* 分步渲染 + 出错就地显示：这个页面主要在无头浏览器里靠 still 抓帧看，
+     所以一旦某一步抛异常，必须让它自己出现在画面上，否则只能看到"某块空白"。
+     同一个错误只报一次，避免每帧刷屏。 */
+  var reported = {}
+  function reportError(where, err) {
+    var key = where + ':' + (err && err.message)
+    if (reported[key] === 1) return
+    reported[key] = 1
+    var d = el.hud
+    d.style.display = 'block'
+    d.style.color = '#ff7050'
+    d.textContent = (d.textContent === '' ? '' : d.textContent + '\n') +
+      '[' + where + '] ' + (err && err.message ? err.message : String(err))
+  }
+  window.addEventListener('error', function (e) { reportError('window', e.error || e.message) })
+
+  /* 顺序有讲究：renderBanners 先跑，它算出的 bannerBump 会在同一帧被
+     renderChrome 用来抬整屏亮度；放到后面就永远慢一帧，砸下去那一下的体感就没了。 */
+  var STEPS = [renderTree, renderScript, renderReadouts, renderCode, renderTopo, renderTE,
+    renderElevHud, renderBanners, renderChrome, drawElevator]
+
+  function render(t) {
+    for (var i = 0; i < STEPS.length; i++) {
+      try {
+        STEPS[i](t)
+      } catch (err) {
+        reportError(STEPS[i].name === '' ? 'step' + i : STEPS[i].name, err)
+      }
+    }
+  }
+
+  /* ── 自检：把整条时间线扫一遍 ──────────────────────────────────────────
+     纯函数 render(t) 最大的好处不只是能定格抓帧，而是整段 15 秒可以在一瞬间
+     跑完。这里逐 50ms 渲染一帧，除了抓异常，还检查几件"只能往前不能回头"的
+     事：进度、已扫描行数、已落下的横幅、已锁定的塔身节数。任何一条倒退都说明
+     时间线上有两段互相打架的代码。结果写进 <html data-sweep="N"> 供脚本读取。 */
+  function sweepTimeline() {
+    var bad = []
+    var prev = { p: -1, rows: 0, banners: 0, segs: 0 }
+    for (var t = 0; t <= TL.endAt + 300; t += 50) {
+      for (var i = 0; i < STEPS.length; i++) {
+        try {
+          STEPS[i](t)
+        } catch (err) {
+          bad.push(t + 'ms ' + (STEPS[i].name || 'step' + i) + ': ' + (err && err.message))
+        }
+      }
+      var p = progressAt(t)
+      if (p < prev.p - 0.001) bad.push(t + 'ms 进度倒退 ' + prev.p.toFixed(2) + ' → ' + p.toFixed(2))
+      prev.p = p
+      var shown = el.treeBody.querySelectorAll('.trow.in').length
+      if (shown < prev.rows) bad.push(t + 'ms 资源树行数减少 ' + prev.rows + ' → ' + shown)
+      prev.rows = shown
+      var on = 0
+      for (var b = 0; b < bannerEls.length; b++) if (bannerEls[b].on) on++
+      if (on < prev.banners) bad.push(t + 'ms 横幅消失 ' + prev.banners + ' → ' + on)
+      prev.banners = on
+      var segs = Math.max(0, Math.min(ELEV.segs, Math.floor((t - TL.elevAt) / TL.elevSeg)))
+      if (segs < prev.segs) bad.push(t + 'ms 组装节数倒退 ' + prev.segs + ' → ' + segs)
+      prev.segs = segs
+    }
+    if (progressAt(0) !== 0) bad.push('开场进度不是 0，而是 ' + progressAt(0))
+    if (Math.abs(progressAt(TL.endAt) - 100) > 0.01) bad.push('收尾进度不是 100，而是 ' + progressAt(TL.endAt))
+    if (bannerEls.length !== 4) bad.push('横幅数量不是 4')
+    document.documentElement.dataset.sweep = String(bad.length)
+    el.hud.style.display = 'block'
+    el.hud.style.color = bad.length === 0 ? '#b8c840' : '#ff7050'
+    el.hud.textContent = 'SWEEP problems=' + bad.length +
+      (bad.length === 0 ? '\nOK · ' + (Math.floor((TL.endAt + 300) / 50) + 1) + ' frames · 0 errors' : '\n' + bad.slice(0, 8).join('\n'))
+    document.documentElement.dataset.ready = '1'
+  }
+
+  /* ══ 驱动 ═══════════════════════════════════════════════════════════════
+     两条驱动：rAF 负责逐帧流畅，interval 负责"一定在走"。
+     rAF 会在后台标签页被节流甚至完全停发，而这段动画是开机片头——停发就等于
+     卡在中间那一帧不动。两个驱动都调同一个 advance()，而 render(t) 是纯函数、
+     lastT 还会挡掉重复帧，所以两路同时跑是安全的。 */
+  var startedAt = 0
+  var paused = false
+  var lastT = -1
+  var rafId = 0
+  var tickerId = null
+
+  function advance() {
+    if (paused) return
+    var now = performance.now()
+    var t = (now - startedAt) * SPEED
+    if (t >= TOTAL) {
+      if (LOOP) {
+        startedAt = now
+        t = 0
+      } else {
+        // 放完就停：否则 rAF 和 interval 会一直空转到页面关掉为止。接进插件后
+        // 这段要能同时被 show 的 cancel() 拆掉，所以这里先自己收干净。
+        if (TOTAL !== lastT) { lastT = TOTAL; render(TOTAL) }
+        stopDrivers()
+        return
+      }
+    }
+    if (t !== lastT) { lastT = t; render(t) }
+  }
+
+  function frame() {
+    rafId = requestAnimationFrame(frame)
+    advance()
+  }
+
+  function startDrivers() {
+    if (rafId === 0) rafId = requestAnimationFrame(frame)
+    if (tickerId === null) tickerId = setInterval(advance, 50)
+  }
+
+  function stopDrivers() {
+    if (rafId !== 0) { cancelAnimationFrame(rafId); rafId = 0 }
+    if (tickerId !== null) { clearInterval(tickerId); tickerId = null }
+  }
+
+  function restart() {
+    startedAt = performance.now()
+    paused = false
+    lastT = -1
+    render(0)
+    if (!STILL) startDrivers()
+  }
+
+  /* 抓帧时把舞台钉到指定尺寸：布局坐标 = 截图坐标 */
+  function pinStage() {
+    if (PIN_W <= 0 || PIN_H <= 0) return
+    document.documentElement.classList.add('pinned')
+    document.body.classList.add('pinned')
+    document.documentElement.style.width = PIN_W + 'px'
+    document.documentElement.style.height = PIN_H + 'px'
+    document.body.style.width = PIN_W + 'px'
+    document.body.style.height = PIN_H + 'px'
+    el.screen.style.width = PIN_W + 'px'
+    el.screen.style.height = PIN_H + 'px'
+  }
+
+  function boot() {
+    pinStage()
+    // 先量出电梯面板的两个矩形（网格位置 / 铺满位置），hero 插值要用
+    measureElev()
+    // 代码墙的池子按面板实际高度定，所以也要等布局落地
+    buildCodePool()
+    if (params.get('sweep') === '1') {
+      sweepTimeline()
+      return
+    }
+    if (STILL) {
+      document.documentElement.classList.add('still')
+      var t0 = AT === null ? 0 : AT
+      render(t0)
+      document.documentElement.dataset.ready = '1'
+      // 字体落地后重量一次：否则首帧可能用回退字形，截图里的字距会不对
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { render(t0) })
+      requestAnimationFrame(function () { render(t0) })
+      return
+    }
+    // restart() 自己会把两个驱动拉起来（重复调用有幂等保护）
+    restart()
+  }
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); restart() }
+    else if (e.key === 'p' || e.key === 'P') { paused = !paused; if (!paused) startedAt = performance.now() - lastT / SPEED }
+    else if (e.key === 'd' || e.key === 'D') { DEBUG = !DEBUG; el.hud.style.display = DEBUG ? 'block' : 'none' }
+  })
+  window.addEventListener('click', function () { if (!STILL) restart() })
+  window.addEventListener('resize', function () {
+    // 先重量矩形再重画：hero 阶段面板挂的是 inline px 尺寸，量之前会自动摘掉
+    measureElev()
+    buildCodePool()
+    // still 模式必须回到同一个 at：否则一次意外 resize 会把定格帧打乱
+    if (STILL) { render(AT === null ? 0 : AT); return }
+    render(paused ? lastT : (performance.now() - startedAt) * SPEED)
+  })
+
+  boot()
+  // 供截图脚本判断这一帧是否已经画完
+  window.__overwriteShow = { render: render, total: TOTAL, marks: TL }
+})()
+</script>
+</body>
+</html>

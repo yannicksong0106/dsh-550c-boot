@@ -1,9 +1,9 @@
 # 致谢 / Credits
 
-## 550C 片头动画与 HTML 源码 —— Voidpoket
+## 550C 片头动画与 HTML 源码 —— Voidpocket
 
-这个插件的动画不是重写的，是**移植**的：`assets/550C-source.html` 是 **Voidpoket**（GitHub:
-[@Voidpoket](https://github.com/Voidpoket)）提供的 550C 片头页面原稿，本仓库的 `scripts/extract.mjs`
+这个插件的动画不是重写的，是**移植**的：`assets/550C-source.html` 是 **Voidpocket**（GitHub:
+[@Voidpocket](https://github.com/Voidpocket)）提供的 550C 片头页面原稿，本仓库的 `scripts/extract.mjs`
 只对它做定点改写（`:host` 作用域、可取消定时器、去掉页面级监听等），样式表、DOM 结构与动画脚本逐字保真。
 配色（琥珀 CRT 阶梯）、面板布局、时间线节奏都出自这份原稿。
 

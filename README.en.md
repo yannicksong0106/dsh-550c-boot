@@ -66,7 +66,7 @@ cyan, white (P4). Preferences live in `localStorage` (`dsh-550c-boot:mode`).
 
 ## Credits
 
-The animation and its HTML source were provided by **Voidpoket** ([@Voidpoket](https://github.com/Voidpoket));
+The animation and its HTML source were provided by **Voidpocket** ([@Voidpocket](https://github.com/Voidpocket));
 the plugin engineering and port are by **Ziyang Song** ([@yannicksong0106](https://github.com/yannicksong0106)).
 See [CREDITS.md](CREDITS.md).
 

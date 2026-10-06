@@ -774,15 +774,98 @@ function SchemeRow() {
 function apply(ctx) {
   // The settings rows are ordinary slot contributions: they belong to a panel
   // and should live and die with it.
-  ctx.slots.inject('settings.general.item', () =>
-    ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c', order: 26 }, SettingsRow),
-  )
-  ctx.slots.inject('settings.general.item', () =>
-    ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-scheme', order: 27 }, SchemeRow),
-  )
-  ctx.slots.inject('settings.general.item', () =>
-    ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-update', order: 28 }, VersionRow),
-  )
+  //
+  // WHERE THEY LIVE IS NEGOTIATED, and the reason is the shared ledger. The
+  // obvious home is `settings.general.item`, which every feature package shares —
+  // and `dsh-550c-skin` was injecting its three rows there with the SAME order
+  // numbers as this plugin (26/27/28). Equal orders tie, a list slot sorts by
+  // (priority, order), a stable sort leaves ties in registration order, and the
+  // General page came out as two unrelated plugins alternating row by row:
+  //
+  //   550C 开机动画 · 550C 皮肤 · 开机动画配色 · CRT 气氛 · 版本与更新 · 控制台外观
+  //
+  // Measured live: 17 rows in General, 6 of them ours, interleaved. So the skin
+  // now declares a 550C page of its own (`settings.section` id `550c`) and the
+  // 550C rows gather there. Slot names are declared exactly once — a second
+  // `children` table for the same key THROWS — so this plugin injects into the
+  // page the skin declares rather than declaring one of its own.
+  //
+  // The fallback to General is not politeness: `register()` throws for an
+  // undeclared slot, so a plugin loaded without the skin has nowhere else to go.
+  //
+  // A plain "check whether the page exists, then choose" does NOT work. `inject`
+  // runs its callback the moment its slot is DECLARED, and General is declared by
+  // the settings shell long before a third-party plugin declares its own page —
+  // so at the moment General asks, the honest answer is still "General". The rows
+  // are therefore placed in General and MOVED when the 550C page appears.
+  // `register()` returns a disposer and registering the same id twice in one list
+  // slot throws, so the move always disposes before it registers.
+
+  /** The fallback placement in the shared General ledger, while it is the home. */
+  let inGeneral = null
+  /** The placement on the 550C page, once that page exists. */
+  let onSeries = null
+
+  /** Place the three rows in the shared General ledger. */
+  const placeInGeneral = () => {
+    const placed = [
+      ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c', order: 26 }, SettingsRow),
+      ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-scheme', order: 27 }, SchemeRow),
+      ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-update', order: 28 }, VersionRow),
+    ]
+    inGeneral = () => {
+      for (const dispose of placed) dispose()
+    }
+  }
+
+  /**
+   * Place the three rows on the 550C page the skin declares.
+   *
+   * The orders start at 50, NOT at 10. The page's first four rows are the skin's
+   * — 配色 10, 气氛 20, 仪表盘 30, 控制台外观 40 — so copying this plugin's old
+   * 26/27/28 across would have recreated the exact collision it was written to
+   * fix, one page over. The convention for the series is tens: the skin owns
+   * 10..40, this plugin takes 50..70, and a later plugin slots into the gaps.
+   */
+  const placeOnSeries = () => {
+    const placed = [
+      ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c', order: 50 }, SettingsRow),
+      ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-scheme', order: 60 }, SchemeRow),
+      ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-update', order: 70 }, VersionRow),
+    ]
+    onSeries = () => {
+      for (const dispose of placed) dispose()
+    }
+  }
+
+  ctx.slots.inject('settings.550c.item', () => {
+    // The page wins. Drop the General placement first, or the same three rows
+    // render in both ledgers.
+    inGeneral?.()
+    inGeneral = null
+    placeOnSeries()
+    return () => {
+      onSeries?.()
+      onSeries = null
+      // The page went away — the skin was unloaded at run time. Go back to the
+      // shared ledger rather than leaving this plugin with no settings at all.
+      // Guarded because a teardown can race the shell's own, and registering into
+      // a slot that is already gone throws.
+      try {
+        if (inGeneral === null) placeInGeneral()
+      } catch (error) {
+        /* General is gone too; there is nothing left to fall back to. */
+      }
+    }
+  })
+
+  ctx.slots.inject('settings.general.item', () => {
+    if (onSeries === null) placeInGeneral()
+    return () => {
+      inGeneral?.()
+      inGeneral = null
+    }
+  })
 
   // The splash is deliberately NOT a slot contribution — mountOverlay() explains
   // why. Registered as an effect so disabling the plugin takes the splash down.

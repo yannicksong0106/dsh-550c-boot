@@ -46,7 +46,7 @@ entry 允许的键只有 `url` / `name` / `category` / `description` / `tarball`
 - [x] 没有 `prepare` / `postinstall` 之类的安装期脚本（避免 pnpm 的 `allowBuilds` 授权，供应链审查也看这条）
 - [x] 零运行时依赖（`react` 只是可选 peer，客户端 external）
 - [x] `package.json#dshWorkshop` 与仓库真实能力一致，未验证的项写 `null` 或 `unknown`
-- [x] LICENSE + CREDITS（动画原稿署名 Voidpoket）
+- [x] LICENSE + CREDITS（动画原稿署名 Voidpocket）
 
 ## 1. 推到 GitHub
 
