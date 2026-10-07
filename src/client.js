@@ -52,6 +52,8 @@ const HOST_SHEET_ID = 'dsh-550c-boot-host'
 
 /** The one live splash; the boot trigger and the preview button share it. */
 let liveOverlay = null
+/** Set while the plugin is being disabled, so the teardown does not start the login. */
+let pluginTornDown = false
 
 function readMode() {
   try {
@@ -121,6 +123,8 @@ const ROW_CSS = `
 .dsh550c-preview{border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));background:transparent;color:var(--dsw-alias-label-primary,#191919);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;border-radius:8px;cursor:pointer}
 .dsh550c-preview:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 .dsh550c-preview[disabled]{opacity:.55;cursor:default}
+.dsh550c-input{border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));background:transparent;color:var(--dsw-alias-label-primary,#111);border-radius:6px;padding:6px 10px;font:inherit;min-width:120px}
+.dsh550c-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4d6bfe);outline-offset:1px}
 .dsh550c-note{margin-top:6px;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary,#666)}
 .dsh550c-note b{color:var(--dsw-alias-label-primary,#191919);font-weight:600}
 .dsh550c-note.up{color:var(--dsw-alias-brand-primary,#4d6bfe)}
@@ -403,6 +407,10 @@ function mountOverlay(force) {
     dragBand.remove()
     host.remove()
     if (liveOverlay === record) liveOverlay = null
+    // The splash owns the first act and nothing else; the login phase (src/login.js)
+    // starts here, from the single exit every path already funnels through. It also
+    // announces the hand-off, so a separately installed login plugin can take over.
+    if (!pluginTornDown) startLoginPhase()
   }
   const finish = () => {
     if (record.finished) return
@@ -806,12 +814,13 @@ function apply(ctx) {
   /** The placement on the 550C page, once that page exists. */
   let onSeries = null
 
-  /** Place the three rows in the shared General ledger. */
+  /** Place the rows in the shared General ledger. */
   const placeInGeneral = () => {
     const placed = [
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c', order: 26 }, SettingsRow),
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-scheme', order: 27 }, SchemeRow),
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-update', order: 28 }, VersionRow),
+      ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-login', order: 29 }, LoginRow),
     ]
     inGeneral = () => {
       for (const dispose of placed) dispose()
@@ -832,6 +841,7 @@ function apply(ctx) {
       ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c', order: 50 }, SettingsRow),
       ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-scheme', order: 60 }, SchemeRow),
       ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-update', order: 70 }, VersionRow),
+      ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-login', order: 80 }, LoginRow),
     ]
     onSeries = () => {
       for (const dispose of placed) dispose()
@@ -871,6 +881,8 @@ function apply(ctx) {
   // why. Registered as an effect so disabling the plugin takes the splash down.
   ctx.effect(
     () => () => {
+      pluginTornDown = true
+      liveLogin?.dispose()
       if (bootSplash !== null) bootSplash.dispose()
       if (liveOverlay !== null) liveOverlay.dispose()
     },

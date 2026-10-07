@@ -141,6 +141,9 @@
       report.scheme = describe(scheme.draw())
       delete report.scheme._checkButton
 
+      var login = renderer(rows['boot-550c-login'])
+      report.login = describe(login.draw())
+      delete report.login._checkButton
       var version = renderer(rows['boot-550c-update'])
       report.versionIdle = describe(version.draw())
       delete report.versionIdle._checkButton

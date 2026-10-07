@@ -255,11 +255,14 @@ const EXPECT = {
   // The settings rows, rendered for real by scripts/harness/rows.js: these are the
   // exact strings a user reads, so a wording change has to be deliberate.
   'settings rows · rendered text': {
-    'rows.ids': 'boot-550c,boot-550c-scheme,boot-550c-update',
+    'rows.ids': 'boot-550c,boot-550c-scheme,boot-550c-update,boot-550c-login',
     'rows.mode.title': '550C 开机动画',
     'rows.mode.desc': '启动时播放 550C 片头；完整模式可用点击或 Esc 跳过。',
     'rows.mode.buttons': '关闭,简易,完整,预览',
     'rows.scheme.desc': '琥珀是原作的配色，也是默认值。',
+    'rows.login.title': '登录授权界面',
+    'rows.login.desc': '片头之后先走一段访问授权：点击或 Enter 推进，Esc 跳过；语音与音效在本机生成，不带素材。',
+    'rows.login.buttons': '关闭,UEG,550C,慢,标准,快,预览',
     'rows.versionIdle.desc': /^当前 v\d+\.\d+\.\d+，从 npm 查询最新版本。$/,
     'rows.versionIdle.buttons': '检查更新',
     'rows.versionCurrent.note': /^已是最新 v\d+\.\d+\.\d+。打开 npm 页面$/,

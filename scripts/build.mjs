@@ -24,7 +24,7 @@ import { Script } from 'node:vm'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const PLUGIN_ID = 'dsh-550c-boot'
-const PARTS = ['src/assets.js', 'src/show.js', 'src/enhance.js', 'src/client.js']
+const PARTS = ['src/assets.js', 'src/show.js', 'src/enhance.js', 'src/login.js', 'src/client.js']
 
 const read = (file) => readFileSync(resolve(root, file), 'utf8')
 const body = PARTS.map((file) => `//#region ${file}\n${read(file).trimEnd()}\n//#endregion`).join('\n\n')
