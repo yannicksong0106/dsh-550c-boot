@@ -877,6 +877,16 @@ function apply(ctx) {
     }
   })
 
+  // The login is a phase of its own, not a child of the splash: with the splash
+  // switched off nothing would ever call the hand-off, and a user who wants the
+  // authorization screen without the 16-second intro would otherwise get neither.
+  if (readMode() === 'off' && readLoginScreen() !== 'off') {
+    ctx.effect(() => {
+      const timer = window.setTimeout(() => startLoginPhase(), 150)
+      return () => window.clearTimeout(timer)
+    }, 'dsh-550c-boot: login without the splash')
+  }
+
   // The splash is deliberately NOT a slot contribution — mountOverlay() explains
   // why. Registered as an effect so disabling the plugin takes the splash down.
   ctx.effect(
