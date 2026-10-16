@@ -3,8 +3,12 @@
 [中文](README.md) | [English](README.en.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-550c-boot?style=flat-square&logo=npm&label=npm)](https://www.npmjs.com/package/dsh-550c-boot)
-[![License](https://img.shields.io/github/license/yannicksong0106/dsh-550c-boot?style=flat-square)](LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-550c-boot?style=flat-square&label=npm%20downloads%2Fmo)](https://www.npmjs.com/package/dsh-550c-boot)
+[![npm total](https://img.shields.io/npm/dt/dsh-550c-boot?style=flat-square&label=npm%20downloads)](https://www.npmjs.com/package/dsh-550c-boot)
 [![Stars](https://img.shields.io/github/stars/yannicksong0106/dsh-550c-boot?style=flat-square&logo=github&label=Stars)](https://github.com/yannicksong0106/dsh-550c-boot/stargazers)
+[![Forks](https://img.shields.io/github/forks/yannicksong0106/dsh-550c-boot?style=flat-square&label=Forks)](https://github.com/yannicksong0106/dsh-550c-boot/forks)
+[![Last commit](https://img.shields.io/github/last-commit/yannicksong0106/dsh-550c-boot?style=flat-square&label=last%20commit)](https://github.com/yannicksong0106/dsh-550c-boot/commits/main)
+[![License](https://img.shields.io/github/license/yannicksong0106/dsh-550c-boot?style=flat-square&label=license)](LICENSE)
 
 **A 550C boot intro for DeepSeek Harness, followed by a UEG access-permission sequence you can actually click through.**
 
