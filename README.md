@@ -2,125 +2,96 @@
 
 [中文](README.md) | [English](README.en.md)
 
-[![Stars](https://img.shields.io/github/stars/yannicksong0106/dsh-550c-boot?style=flat-square&logo=github&label=Stars)](https://github.com/yannicksong0106/dsh-550c-boot/stargazers)
 [![npm](https://img.shields.io/npm/v/dsh-550c-boot?style=flat-square&logo=npm&label=npm)](https://www.npmjs.com/package/dsh-550c-boot)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-550c-boot?style=flat-square&label=npm%20downloads)](https://www.npmjs.com/package/dsh-550c-boot)
-[![Downloads](https://img.shields.io/github/downloads/yannicksong0106/dsh-550c-boot/total?style=flat-square&label=Downloads)](https://github.com/yannicksong0106/dsh-550c-boot/releases)
-[![Last commit](https://img.shields.io/github/last-commit/yannicksong0106/dsh-550c-boot?style=flat-square)](https://github.com/yannicksong0106/dsh-550c-boot/commits/main)
 [![License](https://img.shields.io/github/license/yannicksong0106/dsh-550c-boot?style=flat-square)](LICENSE)
-[![Topic](https://img.shields.io/badge/topic-dsh--plugin-blue?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![Visitors](https://visitor-badge.laobi.icu/badge?page_id=yannicksong0106.dsh-550c-boot)](https://github.com/yannicksong0106/dsh-550c-boot)
+[![Stars](https://img.shields.io/github/stars/yannicksong0106/dsh-550c-boot?style=flat-square&logo=github&label=Stars)](https://github.com/yannicksong0106/dsh-550c-boot/stargazers)
 
-**给 DeepSeek Harness（DSH）加一段 550C 开机片头。**
-每次启动客户端全屏播放，播完渐出，露出真正的界面。*Full-screen 550C boot intro for DSH.*
+**给 DeepSeek Harness 加一段 550C 开机片头，接一段能点着玩的 UEG 访问授权。**
 
-动画与 HTML 原稿由 **Voidpocket**（[@Voidpocket](https://github.com/Voidpocket)）提供，插件工程与移植由
-**Ziyang Song**（[@yannicksong0106](https://github.com/yannicksong0106)）完成。详见 [CREDITS.md](CREDITS.md)。
+打开 DSH 先看片头。片头之后，你是一名为联合政府工作的操作员 —— 终端在跑、身份卡在核验、地球在转。点击或按 `Enter` 往下走，`Esc` 随时跳过。
 
-![完整模式：47 节点逐点覆写](docs/preview-full.png)
+![完整档：47 个节点逐点覆写](docs/preview-full.png)
 
-- 🎬 **两个档位**：简易档 4 秒（logo 书写）/ 完整档 16 秒（覆写全流程），可一键关闭
-- ⏭️ **随时跳过**：点击画面或按 `Esc`
-- 🖥️ **盖住 DSH 自己的开机卡片**：首帧由宿主半边在文档解析阶段注入，`HARNESS / Loading plugins…` 不会再露脸
-- 🎨 **四套磷光配色**，默认是原作者的琥珀；桌面窗口右上角那三个原生按钮会被收编成同一套颜色
-- 🔐 **片头之后可走一段登录授权**：UEG 联合政府（暖白全息）/ 550C 控制终端（磷光 CRT）两套主题，
-  五步流程，点击或 `Enter` 推进、`Esc` 跳过；语音走系统 TTS、音效现场合成，**不带任何素材**
+---
+
+## 功能
+
+### 🎬 开机片头
+
+- **两个档位**：简易档约 4 秒（logo 书写）／ 完整档约 16 秒（覆写全流程），也可以一键关掉
+- **随时跳过**：点一下画面，或按 `Esc`
+- **不露馅**：首帧由宿主半边在文档解析阶段就盖上去，DSH 自己的 `HARNESS / Loading plugins…` 卡片不会再闪出来
+- **桌面端也照顾到**：片头播放时，窗口右上角那三个系统按钮会跟着变透明，符号色跟着主题走
+
+### 🛰️ UEG 访问授权界面
+
+片头之后可以接着走一段**可交互**的访问授权，一共三幕：
+
+1. **过曝洗白 → 底板擦出** —— 终端、身份卡、地球依次到位
+2. **五步授权** —— 身份核验、权限判定、许可证签发，一路打字机 + 语音播报
+3. **色散揭幕** —— 终幕把整屏收成一句话
+
+- 点击或按 `Enter` 推进，`Esc` 跳过
+- **两套主题**：UEG 联合政府（浅色公文风）／ 550C 控制终端（暗色终端风）
+- **可以 DIY 你的身份卡**：操作员姓名、头像、编号、授权等级、签发机构、有效期、许可范围、生物特征
+- **配音**：男声已就绪（逐句一个音频文件，不赶时间、不吞尾音）；女声还在做，界面上标着「开发中」
+- **自动播放**：默认开启，也可以改成手动
+
+### 🎛️ 设置页
+
+设置里多一个 **550C** 页，顶部是胶囊切换条：
+
+| 分组 | 里面放什么 |
+| --- | --- |
+| **外观** | 皮肤相关的设置行 |
+| **550C 开机动画** | 片头档位、配色、版本与更新 |
+| **UEG 登录界面** | 界面档位、自动播放、配音、卡面 DIY、预览 |
+
+- **检查更新**：直接读 npm 上的最新版本，告诉你有没有新版，支持一键更新（桌面端会让你去「设置 → 插件」里装）
+- **预览**：不用重启，点一下就能看动画
+
+### 🎨 配套皮肤
+
+想要整套视觉一致，配一个同套件的皮肤插件：
+
+> **[dsh-550c-skin](https://www.npmjs.com/package/dsh-550c-skin)** —— 把 DSH 整个界面换成 550C 控制台（四套磷光配色、扫描线、等宽字体、机器读数栏）。
+
+两个插件**各自独立安装、互不依赖**；同时装上时，550C 设置页由本插件提供，皮肤只往里加自己的设置行。
+
+---
 
 ## 安装
 
-```sh
-# 从 npm 安装（最省事：免 allowBuilds，市场里也是一条命令）
-dsh plugin --profile web add dsh-550c-boot
-
-# 从 GitHub 安装（仓库带构建产物，无安装期脚本）
-dsh plugin --profile web add github:yannicksong0106/dsh-550c-boot
-
-# 或用预构建 tarball（Release 附件，附件名不带版本号，latest 链接不会随发版失效）
-dsh plugin --profile web add https://github.com/yannicksong0106/dsh-550c-boot/releases/latest/download/dsh-550c-boot.tgz
-
-# 或从本地目录安装
-dsh plugin --profile web add <本目录绝对路径>
+```bash
+npm i dsh-550c-boot
 ```
 
-装完**必须重启一次 DSH**（bundle 在启动时装配）。升级或重装后请按 **Ctrl+Shift+R** 硬刷新——
-DSH 的客户端 bundle 带 `max-age=31536000, immutable`，而 URL 上的 `rev` 是进程 nonce、不随内容变化，
-普通 F5 会一直用第一次抓到的副本。
+或者直接在 DSH 里：**设置 → 插件 → 安装** `dsh-550c-boot@latest`。装完重启一次客户端。
 
-## 使用
+---
 
-模式开关在 **设置 → 通用 → 550C 开机动画**，旁边有「预览」按钮可以立刻看一遍。
+## 怎么用
 
-| 档位 | 时长 | 内容 |
-|---|---|---|
-| **简易**（默认） | ~4 秒 | 550C logo 逐路径书写 |
-| **完整** | ~16 秒 | logo → 基站接管终端 → 47 节点逐点覆写 → `SYSTEM IS REWRITTEN` |
-| **关闭** | — | 不播放，一张黑屏都不会出现 |
+```
+设置 → 550C
+  ├─ 550C 开机动画   选档位（简易 / 完整 / 关闭）、换配色
+  └─ UEG 登录界面    选界面、开自动播放、选配音、改身份卡、点「预览」看效果
+```
 
-- 动画**播完才渐出**，不等软件加载状态；无论 DSH 是否早已就绪都会完整播完
-- 完整档下**点击画面或按 `Esc`** 跳过
-- 偏好存在浏览器 `localStorage`（键 `dsh-550c-boot:mode`），与已装的第三方设置行做法一致
-- 每次客户端加载都会播（刷新页面也算）；「每个会话只播一次」需要额外去重，目前故意不做
-- 片头播放期间，桌面窗口右上角那几个原生按钮**浮在动画上**（条带透明、符号用当前配色），
-  窗口顶部 40px 仍可拖动窗口；片头结束自动还原
-- **零运行时依赖**：`dependencies` 是空的，宿主半边只用 `node:fs`
+> 片头和 UEG 界面**只能留一个**：UEG 自带完整三幕，所以它开着的时候片头会自动让位。关掉其中一个就能用另一个。
 
-### 版本与更新
+---
 
-DSH 自身没有插件更新入口，所以通用设置里多了一行 **版本与更新**：
+## 已知限制
 
-- **检查更新**：向本机宿主查询 npm 上的最新版本。宿主先打**国内镜像** `registry.npmmirror.com`，
-  失败再退官方源，响应里带上来源（实测这台机器镜像 160ms、官方 2078ms）；缓存 5 分钟，
-  两个源都问不到就直说问不到。只有按下按钮才会联网。
-- **立即更新**（`web` 等 profile）：由宿主调用 DSH CLI 执行
-  `plugin --profile <当前 profile> add dsh-550c-boot@latest` —— 唯一受支持的改 profile 方式 ——
-  把 CLI 输出原样回报，然后提示重启客户端生效。
-- **桌面端走提示词**：`dsh plugin` 硬编码拒绝 `desktop`（Electron 应用独占管理该 profile），
-  所以那里不给「立即更新」，而是显示「在 设置 → 插件 里安装 `dsh-550c-boot@latest`，然后重启」
-  加一个复制包名按钮。
+- **女声配音**还在做（界面上标着「开发中」）
+- **桌面端不能自动更新**（desktop profile 由客户端独占管理）—— 点「检查更新」会告诉你去「设置 → 插件」里装
+- 片头和 UEG 界面互斥，不能同时开
 
-两个请求都走宿主半边的同源路由（`GET /dsh-550c-boot/update`、`POST /dsh-550c-boot/update/apply`）：
-页面 CSP 很紧，而宿主进程本来就管出网。
+---
 
-### 配色
+## 授权与致谢
 
-| 方案 | 说明 |
-|---|---|
-| **琥珀**（默认） | 原作者的 CRT 配色，一个 token 都不覆盖 |
-| 绿 | P1 绿磷光终端 |
-| 青 | 冷青磷光 |
-| 白 | P4 白/灰磷光 |
+MIT © [Ziyang Song](https://github.com/yannicksong0106)
 
-「琥珀」故意没有对应的 CSS 块：选它会把 `data-scheme` 整个清掉，默认值重新接管。
-
-![简易模式](docs/preview-simple.png)
-![青磷光配色](docs/preview-cyan.png)
-
-## 兼容与限制
-
-- **DSH 版本要求 `>=0.2.0-rc.1`**（`package.json#dsh.engines`）。宿主半边依赖 `webserver/index-inject`
-  的行渲染行为，我只在 `0.2.0-rc.1` 上实测过，不声明没验过的下限。在更低的宿主（如 `0.1.7-rc.2`）上
-  安装能过，但之后的应用内更新会被以 412 拒掉；需要 `0.1.7` 支持可以提 issue。
-- 只能在 **Web UI 加载之后**覆盖全屏，做不到早于 Electron 窗口首帧（窗口本身仍有一瞬间空白）。
-- 首帧是一块**纯色**（动画自己的底色），不是动画的第一帧画面——它只负责在插件求值前占住屏幕。
-- 桌面窗口的原生按钮仍在，只是被改成同一套配色；要去掉得改桌面壳。
-- macOS 上片头播放期间，顶部条带归窗口拖动，点击跳过请点别处或按 `Esc`。
-
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 工程结构、为什么是「提取」而不是重写、启动时序与首帧注入策略 |
-| [docs/ENHANCEMENTS.md](docs/ENHANCEMENTS.md) | 内容增强层：等宽字体、字符单元进度条、真实时钟戳、固件页脚与 CRC32 |
-| [docs/DESKTOP-CHROME.md](docs/DESKTOP-CHROME.md) | 桌面标题栏三个按钮的让位与换色、macOS 拖拽守卫 |
-| [docs/VERIFICATION.md](docs/VERIFICATION.md) | 构建与验证：harness 探针、真实 GUI 的 CDP 截图断言 |
-| [docs/PUBLISHING.md](docs/PUBLISHING.md) | 发布与收录：GitHub 直装 / OMDSH Hub 投稿 / npm |
-| [docs/PLAN-macos-and-update-check.md](docs/PLAN-macos-and-update-check.md) | 评估稿：macOS 适配待办、设置里的「检查更新」方案对比 |
-
-> 顶部徽章都是外部图片（shields.io / 第三方访客计数器），加载不出来不影响 README 本身。
-
-## 致谢
-
-动画与 HTML 原稿由 **Voidpocket**（[@Voidpocket](https://github.com/Voidpocket)）提供，插件工程与移植由
-**Ziyang Song**（[@yannicksong0106](https://github.com/yannicksong0106)）完成。详见 [CREDITS.md](CREDITS.md)。
-
-[MIT](LICENSE) © 2026 Ziyang Song
+550C 片头动画与 HTML 原稿由 **[Voidpocket](https://github.com/Voidpocket)** 提供；插件工程、移植与 UEG 界面由 **Ziyang Song** 完成。详见 [CREDITS.md](CREDITS.md)。

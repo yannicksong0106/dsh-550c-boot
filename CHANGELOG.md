@@ -2,7 +2,35 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号用 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [0.4.0] - 2026-10-06
+## [0.4.0] - 2026-10-16
+
+### 界面与设置页改版
+
+- **「550C」设置页换成筛选式**：顶部是胶囊切换条（外观 / 550C 开机动画 / UEG 登录界面），
+  内容区是一张圆角卡片；胶囊吸顶，滚动时跟着走。颜色改成跟随主题（用 `color-mix` 与
+  `currentColor`），白主题下也看得清。
+- **发布硬伤修复**：`lib/index.js` 里写死的绝对路径改成基于 `import.meta.url` 的仓库相对解析；
+  配音收进 `preview/voice/`（每句一个 wav，共 10 个），发布出去的包不再让 `/ueg/` 404。
+- **新增检查更新 / 一键更新**：宿主代理两条路由（先 npmmirror 后 npmjs，5 分钟缓存、
+  6 秒查询超时），设置页显示已装版本与最新版本；桌面端只能提示去「设置 → 插件」里装。
+- **配置元数据**：`keywords` + `dsh.suite`（声明与 `dsh-550c-skin` 同属一套件、互相推荐、无依赖）。
+
+### 修复
+
+- `LOGIN_VALUES` 常量缺失导致档位读写静默失效，表现是**点 UEG 档位高亮不动**
+  （读写都抛错并被 `try/catch` 吞掉）。
+- splash 互斥在 `mountOverlay()` 返回 `null` 时调用 `dispose()`，异常会让**插件整包加载失败**，
+  表现是**设置里没有 550C、皮肤一起崩**。
+- UEG 动画的凝聚起点偏右：窗口由小变全屏时画布属性尺寸没跟着更新，坐标被拉伸；
+  现在监听 `resize` 同步画布与凝聚中心。
+
+### 代码整理
+
+- 新增 `src/panel.js`：`PANEL_TABS` / `PANEL_SLOTS` / `Panel550c` 的单一事实来源，
+  加新动画只需改一处；`login.js` 与 `client.js` 全部改为引用它。
+- 拆出 `login-css.js` / `login-gate.js` / `login-themes.js` / `rows.js`：
+  `login.js` 1125 → 363 行，`client.js` 971 → 655 行。
+- 删除临时目录与开发残留（`.verify-*` 归档进 `_dev/` 并加进 `.gitignore`）。
 
 ### 新增
 

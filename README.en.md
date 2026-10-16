@@ -1,73 +1,97 @@
 # dsh-550c-boot
 
-[English](README.en.md) | [中文](README.md)
+[中文](README.md) | [English](README.en.md)
 
-**A full-screen 550C boot intro for DeepSeek Harness (DSH).**
-It plays on every client start, fades out when it finishes, and reveals the real UI.
+[![npm](https://img.shields.io/npm/v/dsh-550c-boot?style=flat-square&logo=npm&label=npm)](https://www.npmjs.com/package/dsh-550c-boot)
+[![License](https://img.shields.io/github/license/yannicksong0106/dsh-550c-boot?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/yannicksong0106/dsh-550c-boot?style=flat-square&logo=github&label=Stars)](https://github.com/yannicksong0106/dsh-550c-boot/stargazers)
 
-![Full mode: 47 nodes rewritten one by one](docs/preview-full.png)
+**A 550C boot intro for DeepSeek Harness, followed by a UEG access-permission sequence you can actually click through.**
 
-- 🎬 **Two cuts**: a 4-second simple cut (logo stroke by stroke) and a 16-second full rewrite, or off
-- ⏭️ **Skippable**: click the screen or press `Esc`
-- 🖥️ **Covers DSH's own boot card**: the host half injects the opening frame while the document is still
-  parsing, so `HARNESS / Loading plugins…` never shows
-- 🎨 **Four phosphor palettes**, amber (the original author's) by default; the native window buttons are
-  repainted to match
+Open DSH and the intro plays first. After it, you are an operator working for the United Earth Government - terminals running, your ID being verified, the globe turning. Click or press `Enter` to move on, `Esc` to skip.
+
+![Full mode: 47 nodes overwritten one by one](docs/preview-full.png)
+
+---
+
+## Features
+
+### 🎬 Boot intro
+
+- **Two modes**: simple (~4s, logo drawn in) / full (~16s, the whole overwrite sequence) - or turn it off entirely
+- **Skip anytime**: click anywhere, or press `Esc`
+- **No flash of the stock loader**: the host half paints the first frame while the document is still parsing, so DSH's own `HARNESS / Loading plugins...` card never shows
+- **Desktop-friendly**: while the intro plays, the three caption buttons in the window corner go transparent and take the theme's accent colour
+
+### 🛰️ UEG access-permission sequence
+
+A three-act, interactive sequence that can follow the intro:
+
+1. **Blown-out wash, then the board wipes in** - terminal, ID card and globe arrive in order
+2. **Five verification steps** - identity check, clearance, permit issued - typed out with voice-over
+3. **Chromatic reveal** - the finale collapses the screen into a single line
+
+- Click or press `Enter` to advance, `Esc` to skip
+- **Two themes**: UEG (light, official paperwork) / 550C control terminal (dark)
+- **Make the ID card yours**: operator name, photo, serial, clearance level, issuer, validity, scope, biometrics
+- **Voice-over**: male is ready (one audio file per line - it never rushes or clips the last word); female is still in progress and marked "开发中" in the UI
+- **Autoplay**: on by default, can be switched to manual
+
+### 🎛️ Settings page
+
+A new **550C** page in Settings, with a pill-style switcher on top:
+
+| Group | What is in it |
+| --- | --- |
+| **外观 / Look** | skin-related rows |
+| **550C 开机动画 / Boot** | intro mode, colour scheme, version and update |
+| **UEG 登录界面 / Login** | screen mode, autoplay, voice, ID card, preview |
+
+- **Check for updates**: reads the latest version from npm and offers a one-click update (on the desktop client it points you to Settings → Plugins instead)
+- **Preview**: play the animation without restarting
+
+### 🎨 Companion skin
+
+For a matching look, pair it with the skin from the same suite:
+
+> **[dsh-550c-skin](https://www.npmjs.com/package/dsh-550c-skin)** - repaints the whole DSH shell as a 550C console (four phosphor schemes, scan line, monospace, readout rails).
+
+The two plugins **install independently and have no code dependency**; when both are present, this plugin owns the 550C settings page and the skin only adds its own rows to it.
+
+---
 
 ## Install
 
-```sh
-# from GitHub (recommended; build output is committed, no install-time scripts)
-dsh plugin --profile web add github:yannicksong0106/dsh-550c-boot
-
-# or the prebuilt tarball (release asset; the asset name is version-free, so `latest` never rots)
-dsh plugin --profile web add https://github.com/yannicksong0106/dsh-550c-boot/releases/latest/download/dsh-550c-boot.tgz
+```bash
+npm i dsh-550c-boot
 ```
 
-**Restart DSH once** after installing (bundles are assembled at startup). After an upgrade, hard-refresh
-with **Ctrl+Shift+R** — DSH serves client bundles with `max-age=31536000, immutable` while the `rev` in the
-URL is a process nonce, so a plain F5 keeps the first copy it ever fetched.
+Or inside DSH: **Settings → Plugins → install** `dsh-550c-boot@latest`, then restart the client.
+
+---
 
 ## Usage
 
-Settings → General → **550C 开机动画**. A **Preview** button replays it immediately.
+```
+Settings → 550C
+  ├─ 550C 开机动画   pick a mode (simple / full / off), change the colour scheme
+  └─ UEG 登录界面    pick the screen, autoplay, voice, edit the ID card, hit Preview
+```
 
-| Mode | Length | Content |
-|---|---|---|
-| **Simple** (default) | ~4 s | the 550C logo drawn stroke by stroke |
-| **Full** | ~16 s | logo → base station takeover → 47 nodes rewritten one by one → `SYSTEM IS REWRITTEN` |
-| **Off** | — | nothing is painted at all |
+> The intro and the UEG sequence are **mutually exclusive**: UEG brings its own three acts, so the intro steps aside while it is on. Turn one off to use the other.
 
-Palettes: **amber** (default, the original CRT palette — not a single token is overridden), green (P1),
-cyan, white (P4). Preferences live in `localStorage` (`dsh-550c-boot:mode`).
+---
 
-![Simple mode](docs/preview-simple.png)
-![Cyan palette](docs/preview-cyan.png)
+## Known limitations
 
-## Compatibility and limits
+- **Female voice-over** is still in progress (marked in the UI)
+- **No self-update on the desktop client** (the desktop profile is managed exclusively by the app) - the update check points you to Settings → Plugins
+- Intro and UEG sequence cannot both be on
 
-- **Requires DSH `>=0.2.0-rc.1`** (`package.json#dsh.engines`). The host half depends on how
-  `webserver/index-inject` rows are rendered, and that is only tested on `0.2.0-rc.1`; a lower floor would
-  claim support that was never verified.
-- It can only cover the screen **after the Web UI loads** — the Electron window itself still shows a blank
-  frame for a moment.
-- The first frame is a **solid colour** (the animation's own background), not the animation's first picture.
-- On macOS the top strip stays draggable while the intro plays; click elsewhere or press `Esc` to skip.
+---
 
-## Docs
+## License and credits
 
-| Document | Content |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | layout, why the animation is *extracted* rather than rewritten, boot timeline and first-frame injection |
-| [docs/ENHANCEMENTS.md](docs/ENHANCEMENTS.md) | the enhancement layer: monospace stack, cell-based progress bar, real clock stamps, firmware footer and CRC32 |
-| [docs/DESKTOP-CHROME.md](docs/DESKTOP-CHROME.md) | the native caption buttons: making room, repainting them, the macOS drag guard |
-| [docs/VERIFICATION.md](docs/VERIFICATION.md) | build and verification: harness probes, CDP screenshots of the real GUI |
-| [docs/PUBLISHING.md](docs/PUBLISHING.md) | distribution: GitHub install / community registries / npm |
+MIT © [Ziyang Song](https://github.com/yannicksong0106)
 
-## Credits
-
-The animation and its HTML source were provided by **Voidpocket** ([@Voidpocket](https://github.com/Voidpocket));
-the plugin engineering and port are by **Ziyang Song** ([@yannicksong0106](https://github.com/yannicksong0106)).
-See [CREDITS.md](CREDITS.md).
-
-[MIT](LICENSE) © 2026 Ziyang Song
+The original 550C intro animation and HTML came from **[Voidpocket](https://github.com/Voidpocket)**; the plugin, the port and the UEG sequence are by **Ziyang Song**. See [CREDITS.md](CREDITS.md).
