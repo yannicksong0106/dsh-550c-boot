@@ -1,0 +1,1575 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>UEG 启动动画 · 第一幕（v2）</title>
+<style>
+  /* ── 舞台 ────────────────────────────────────────────────────────────────
+     莱茵金属式深色工业 HUD。第一幕两拍：
+       拍 A（0–900ms）   大徽记在正中径向展开（快，但不加速）
+       拍 B（900–1500ms）一条扫描线从左到右扫过，依次扫出徽记 → 竖线 →
+                         「UEG 联合政府」→「UNITED EARTH GOVERNMENT」
+     参考图只取白字与图形：mix-blend-mode:screen 让黑底消失，外层再裁掉左右白边
+     —— 结果就是"纯 logo + 字体，不要背景"。                              */
+  :root{
+    --bg:#06070a; --ink:#eef3f8; --dim:#79848f;
+    --line:rgba(238,243,248,.16); --line-soft:rgba(238,243,248,.07);
+    --glow:rgba(238,243,248,.4);
+    --font:"Inter","Noto Sans SC","Segoe UI",system-ui,sans-serif;
+    --mono:"JetBrains Mono","Cascadia Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+
+  .stage{position:fixed;inset:0;overflow:hidden;background:
+      radial-gradient(120% 90% at 50% 48%, #0c0f15 0%, var(--bg) 64%), var(--bg)}
+
+  /* 底子：网格 + 扫描线 + 暗角（压淡，别抢 logo） */
+  .grid{position:absolute;inset:0;pointer-events:none;opacity:.42;background-image:
+      linear-gradient(var(--line-soft) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+    background-size:80px 80px}
+  .scan{position:absolute;inset:0;pointer-events:none;opacity:.3;background:
+      repeating-linear-gradient(180deg,transparent 0 2px,rgba(0,0,0,.24) 2px 3px)}
+  .vignette{position:absolute;inset:0;pointer-events:none;background:
+      radial-gradient(120% 100% at 50% 50%,transparent 58%,rgba(0,0,0,.62) 100%)}
+
+  /* 框架与四角读数（精简） */
+  .frame{position:absolute;inset:26px;border:1px solid var(--line);opacity:.7}
+  .corner{position:absolute;width:24px;height:24px;border:2px solid var(--ink);opacity:0}
+  .corner.tl{top:26px;left:26px;border-right:0;border-bottom:0}
+  .corner.tr{top:26px;right:26px;border-left:0;border-bottom:0}
+  .corner.bl{bottom:26px;left:26px;border-right:0;border-top:0}
+  .corner.br{bottom:26px;right:26px;border-left:0;border-top:0}
+  .readout{position:absolute;font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--dim);opacity:.85}
+  .readout.tl{left:54px;top:52px}
+  .readout.tr{right:54px;top:52px;text-align:right}
+  .readout.bl{left:54px;bottom:52px}
+  .readout.br{right:54px;bottom:52px;text-align:right}
+  .readout b{color:var(--ink);font-weight:600}
+
+  /* ── 拍 A：正中大徽记 ───────────────────────────────────────────────────
+     资源已经由 preview/make-assets.py 预处理成"纯白图形 + 透明背景"，
+     所以这里不需要 filter、也不需要 mix-blend-mode（那两者都会被
+     居中用的 transform 造出的层叠上下文困住）。                          */
+  .sealWrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(52vh,480px);height:min(52vh,480px)}
+  .seal{position:absolute;left:50%;top:50%;width:100%;height:auto;
+    transform:translate(-50%,-50%);
+    opacity:0;clip-path:circle(0% at 50% 50%)}
+
+  /* ── 拍 B：扫描揭出的锁定版式（资源已是纯白 + 透明）──────────────────── */
+  .lockWrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(74vw,1080px);opacity:0}
+  .lockCrop{display:block}
+  .lock{display:block;width:100%;clip-path:inset(0 100% 0 0)}
+  /* 扫描线本体：与揭幕边缘同步从左走到右 */
+  .scanbar{position:absolute;top:-8%;bottom:-8%;width:2px;opacity:0;
+    background:linear-gradient(180deg,transparent,var(--ink),transparent);
+    box-shadow:0 0 18px var(--glow),0 0 44px rgba(238,243,248,.22)}
+
+  .sweep{position:absolute;top:-12%;bottom:-12%;width:36%;pointer-events:none;opacity:0;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.14),transparent);
+    mix-blend-mode:screen}
+
+  /* ── 申请访问许可：交互入口 ───────────────────────────────────────────
+     logo 缩到位、进入循环之后再淡出。它是这套动画的第一个交互点：
+     点击它才继续（音频播完之前按钮是等待态，不抢戏）。                  */
+  .gate{position:absolute;left:50%;top:calc(50% + 214px);transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    opacity:0;pointer-events:none}
+  .gate button{appearance:none;font-family:var(--mono);font-size:13px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ink);background:rgba(238,243,248,.04);
+    border:1px solid var(--line);padding:14px 30px;cursor:pointer;
+    position:relative;overflow:hidden;transition:border-color 160ms ease,box-shadow 200ms ease,background 160ms ease}
+  .gate button::after{content:"";position:absolute;inset:0;background:var(--ink);opacity:0;
+    transition:opacity 160ms ease}
+  .gate button:hover::after{opacity:.1}
+  .gate button:hover{border-color:var(--ink);box-shadow:0 0 22px var(--glow)}
+  .gate button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  /* 按钮外圈一圈缓慢呼吸的框，提示"该你了" */
+  .gate button::before{content:"";position:absolute;inset:-7px;border:1px solid var(--line-soft);
+    opacity:.7;animation:l-breathe 2.6s ease-in-out infinite}
+  .gate em{font-family:var(--mono);font-size:10.5px;letter-spacing:.24em;color:var(--dim);
+    text-transform:uppercase;font-style:normal}
+  @keyframes l-breathe{0%,100%{opacity:.25;transform:scale(1)}50%{opacity:.75;transform:scale(1.035)}}
+
+  /* ── 动态旋转地球（在 logo 与文字上方）─────────────────────────────────
+     点云地球：陆地数据由 preview/make-land.py 预先从徽记那颗地球烘出来，
+     页面只加载一个 js，不读画布像素 —— 所以 file:// 双击打开也能正常显示
+     （从画布读像素会污染画布，getImageData 会抛异常，那就是之前"洞是空的"）。 */
+  .globeLayer{position:absolute;left:50%;top:calc(50% - 250px);transform:translate(-50%,-50%);
+    width:min(30vh,280px);aspect-ratio:1;opacity:0;pointer-events:none;
+    filter:drop-shadow(0 0 26px rgba(238,243,248,.20))}
+  .globe{width:100%;height:100%;display:block}
+  /* 地球的显隐改由 JS 控制（代码汇聚落定后才显出来）——
+     那段时长现在取决于第 1 句配音有多长，不能用固定 CSS 定时。 */
+  @keyframes l-idle{
+    0%,100%{transform:translate(-50%,-50%) scale(1);filter:drop-shadow(0 0 0 rgba(238,243,248,0))}
+    50%{transform:translate(-50%,-50%) scale(1.006);filter:drop-shadow(0 0 14px rgba(238,243,248,.18))}
+  }
+
+  /* ── 时间轴（总 1700ms）────────────────────────────────────────────────
+     0–90      扫描落定 + 四角括号闪
+     90–500    大徽记径向展开
+     90–560    高光横扫
+     500–600   两次色散抖动
+     620–900   徽记上移淡出
+     900–1500  扫描线从左到右，依次扫出 徽记 → 竖线 → 中文 → 英文
+     1500–1700 回落定格                                                  */
+  .settleLine{position:absolute;left:0;right:0;height:2px;top:0;opacity:0;
+    background:linear-gradient(90deg,transparent,var(--ink),transparent);filter:blur(.5px)}
+
+  .stage.play .settleLine{animation:l-scanin 260ms cubic-bezier(.16,1,.3,1) both}
+  .stage.play .corner{animation:l-flash 150ms ease-out both}
+  .stage.play .corner.tr{animation-delay:40ms}
+  .stage.play .corner.bl{animation-delay:80ms}
+  .stage.play .corner.br{animation-delay:120ms}
+  .stage.play .seal{animation:l-seal 410ms cubic-bezier(.16,1,.3,1) 90ms both,
+                              l-sealout 280ms cubic-bezier(.4,0,.2,1) 620ms both}
+  .stage.play .sweep{animation:l-sweep 470ms cubic-bezier(.4,0,.2,1) 90ms both}
+  /* 注意：这里不能带 both —— 填充会在它的延迟期（0–500ms）就套用 from{opacity:0}，
+     把整个徽记藏起来。无填充时延迟期内保持自然状态，抖动只在 500ms 那两帧生效。 */
+  .stage.play .sealWrap.glitch{animation:l-gx 92ms steps(2,end) 500ms 2}
+  /* 1500–1850 快速渐缩小 → 1850 起待机循环 → 1980 起按钮淡出
+     （循环态的 transform 直接写成缩小后的 0.76，否则会跳回原尺寸）*/
+  .stage.play .lockWrap{animation:l-appear 1ms linear 900ms both,
+                                  l-shrink 350ms cubic-bezier(.2,.9,.2,1) 1500ms both,
+                                  l-idle 3.2s ease-in-out 1850ms infinite}
+  .stage.gate-ready .gate{animation:l-gate 420ms cubic-bezier(.16,1,.3,1) both}
+  .stage.play .lock{animation:l-wipe 600ms cubic-bezier(.35,.05,.2,1) 900ms both}
+  .stage.play .scanbar{animation:l-bar 600ms cubic-bezier(.35,.05,.2,1) 900ms both}
+
+  @keyframes l-scanin{0%{top:0;opacity:0}40%{opacity:1}100%{top:100%;opacity:0}}
+  @keyframes l-flash{0%{opacity:0;transform:scale(.6)}60%{opacity:1}100%{opacity:.8;transform:scale(1)}}
+  /* 关键帧里不写 transform：基础 transform 承载"居中 + 放大 3.02"，
+     一旦写进关键帧就会被覆盖，徽记会缩回原始比例。 */
+  @keyframes l-seal{0%{opacity:0;clip-path:circle(0% at 50% 50%)}
+    60%{opacity:1}100%{opacity:1;clip-path:circle(52% at 50% 50%)}}
+  @keyframes l-sealout{to{opacity:0}}
+  @keyframes l-sweep{0%{left:-45%;opacity:0}25%{opacity:.9}100%{left:112%;opacity:0}}
+  @keyframes l-gx{0%{opacity:0;transform:translate(-50%,-50%) translate(0,0)}
+    40%{opacity:.6;transform:translate(-50%,-50%) translate(-3px,0)}
+    70%{opacity:.35;transform:translate(-50%,-50%) translate(2px,0)}
+    100%{opacity:0;transform:translate(-50%,-50%) translate(0,0)}}
+  @keyframes l-appear{to{opacity:1}}
+  @keyframes l-wipe{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 0 0 0)}}
+  @keyframes l-bar{0%{left:0%;opacity:0}6%{opacity:1}94%{opacity:1}100%{left:100%;opacity:0}}
+  @keyframes l-shrink{0%{transform:translate(-50%,-50%) scale(1)}
+    100%{transform:translate(-50%,-50%) scale(.76)}}
+  @keyframes l-idle{
+    0%,100%{transform:translate(-50%,-50%) scale(.76);filter:drop-shadow(0 0 0 rgba(238,243,248,0))}
+    50%{transform:translate(-50%,-50%) scale(.7655);filter:drop-shadow(0 0 16px rgba(238,243,248,.2))}}
+  @keyframes l-gate{0%{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(12px)}
+    100%{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}}
+  @keyframes l-settle{0%{transform:translate(-50%,-50%) scale(1.014)}
+    100%{transform:translate(-50%,-50%) scale(1)}}
+
+  @media (prefers-reduced-motion: reduce){
+    .stage.play *{animation:none !important}
+    .seal{opacity:1;clip-path:none;transform:none}
+    .lockWrap{opacity:1}
+    .lock{clip-path:none}
+    .corner{opacity:.8}
+  }
+
+  /* ═══ 第二幕：550C 核验 ═══════════════════════════════════════════════
+     拍序：极快淡出 → 550C 正在核验身份 → 右侧拼装身份许可卡 →
+           右侧地球 + UEG + 正在检查登录环境(进度条) → 淡出 → logo 重回中央 → 淡出。
+     卡片的姓名与照片走 ?name= / ?photo=，方便 DIY。                        */
+  .act2{position:absolute;inset:0;display:none;z-index:5}
+  .act2.on{display:block}
+  .act2 > *{position:absolute}
+
+  /* 整体淡入淡出由 .veil 承担，方便"极快淡出"只改一个时长 */
+  .veil{position:absolute;inset:0;background:var(--bg);opacity:0;pointer-events:none;z-index:9}
+
+  /* 场景一：550C 正在核验身份（左半） */
+  .verify{left:6.5vw;top:50%;transform:translateY(-50%);width:34vw;min-width:340px;opacity:0}
+  /* 父层也要出现，否则 li 动画再漂亮也看不到（之前就是漏了这一条） */
+  .stage.play .verify{animation:l-line 420ms ease-out .2s both}
+  .verify h2{font-family:var(--mono);font-size:clamp(18px,1.5vw,26px);font-weight:600;
+    letter-spacing:.14em;color:var(--ink);margin-bottom:6px}
+  .verify .sub{font-family:var(--mono);font-size:11px;letter-spacing:.26em;color:var(--dim);
+    text-transform:uppercase;margin-bottom:22px}
+  .verify .rule{height:1px;background:var(--line);margin:0 0 18px}
+  .verify ol{list-style:none;font-family:var(--mono);font-size:12.5px;letter-spacing:.08em}
+  .verify li{display:flex;gap:12px;padding:7px 0;color:var(--dim);opacity:0}
+  .verify li b{color:var(--ink);font-weight:500;flex:1}
+  .verify li i{font-style:normal;color:var(--ink);opacity:.5}
+  .stage.play .verify li{animation:l-line 320ms ease-out both}
+  .verify li:nth-child(1){animation-delay:.15s}
+  .verify li:nth-child(2){animation-delay:.55s}
+  .verify li:nth-child(3){animation-delay:1.0s}
+  .verify li:nth-child(4){animation-delay:1.5s}
+  .verify li:nth-child(5){animation-delay:2.1s}
+  @keyframes l-line{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+
+  /* 场景一右侧：身份许可卡（靠中间） */
+  .idPos{right:25vw;top:50%;transform:translateY(-50%);width:clamp(280px,21vw,360px)}
+  .idcard{border:1px solid var(--line);background:linear-gradient(160deg,rgba(238,243,248,.055),rgba(238,243,248,.015));
+    padding:18px 18px 16px;position:relative;overflow:hidden;opacity:0}
+  /* 卡片按部位逐个"装"上去：外框 → 照片 → 姓名 → 数据 → 条码 */
+  .stage.play .idcard{animation:l-card 420ms cubic-bezier(.16,1,.3,1) .5s both}
+  @keyframes l-card{from{opacity:0;clip-path:inset(0 100% 0 0)}to{opacity:1;clip-path:inset(0 0 0 0)}}
+  .idcard::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(100deg,transparent 40%,rgba(255,255,255,.09) 50%,transparent 60%);
+    transform:translateX(-120%);animation:l-cardsweep 1.1s ease-out .9s 1}
+  @keyframes l-cardsweep{to{transform:translateX(120%)}}
+  .idHead{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+  .idHead b{color:var(--ink);font-weight:600}
+  .idBody{display:flex;gap:14px;padding:14px 0}
+  .idPhoto{width:74px;height:92px;flex:0 0 auto;border:1px solid var(--line);
+    background:rgba(238,243,248,.05) center/cover no-repeat;position:relative;opacity:0}
+  .stage.play .idPhoto{animation:l-line 300ms ease-out .95s both}
+  .idPhoto span{position:absolute;bottom:-16px;left:0;right:0;text-align:center;
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:var(--dim)}
+  .idMeta{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:9px}
+  .idMeta .name{font-size:19px;font-weight:600;letter-spacing:.04em;opacity:0}
+  .stage.play .idMeta .name{animation:l-line 300ms ease-out 1.15s both}
+  .idMeta .en{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--dim);opacity:0}
+  .stage.play .idMeta .en{animation:l-line 300ms ease-out 1.3s both}
+  .idRow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;
+    letter-spacing:.12em;color:var(--dim);opacity:0}
+  .idRow b{color:var(--ink);font-weight:500}
+  .stage.play .idRow{animation:l-line 300ms ease-out both}
+  .stage.play .idRow:nth-of-type(1){animation-delay:1.45s}
+  .stage.play .idRow:nth-of-type(2){animation-delay:1.6s}
+  .idFoot{display:flex;align-items:flex-end;justify-content:space-between;
+    border-top:1px solid var(--line);padding-top:12px;opacity:0}
+  .stage.play .idFoot{animation:l-line 320ms ease-out 1.8s both}
+  .idBars{display:flex;gap:2px;height:26px;align-items:flex-end}
+  .idBars i{display:block;width:2px;background:var(--ink);opacity:.75}
+  .idFoot em{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.2em;color:var(--dim)}
+
+  /* 场景二：右侧地球 + UEG + 检查登录环境 + 进度条 */
+  .globePos{right:7vw;top:50%;transform:translateY(-50%);width:clamp(170px,13vw,220px);
+    text-align:center;opacity:0}
+  .stage.play .globePos{animation:l-line 420ms ease-out .35s both}
+  .globePos .ball{width:100%;aspect-ratio:1;position:relative}
+  .globePos .word{font-size:clamp(30px,2.6vw,44px);font-weight:800;letter-spacing:.14em;
+    margin-top:14px;color:var(--ink)}
+  .globePos .env{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:var(--dim);
+    margin-top:10px;text-transform:uppercase}
+  .bar{height:3px;background:rgba(238,243,248,.14);margin-top:9px;position:relative;overflow:hidden}
+  .bar i{position:absolute;inset:0 100% 0 0;background:var(--ink);box-shadow:0 0 12px var(--glow)}
+  .globePos .pct{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--dim);margin-top:7px}
+
+  /* 场景三：核验通过后 logo 重回中央 */
+  .finale{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(74vw,1080px);opacity:0}
+  .finale img{width:100%;display:block}
+
+  @media (prefers-reduced-motion: reduce){
+    .verify li,.idcard,.idPhoto,.idMeta .name,.idMeta .en,.idRow,.idFoot,.globePos{opacity:1 !important;animation:none !important}
+    .idcard{clip-path:none !important}
+  }
+
+  /* ═══ 第二幕 v2：布局重做（覆盖上面的初版规则）══════════════════════════
+     左上：550C 大字 + 正在核验身份；其下：服务器员工数据读取/比对面板（逐行滚出）
+     右侧：放大的身份许可卡（全息扫描 + 流光 + 照片位扫描 + 核验通过盖章）
+     卡片下方：旋转地球 + UEG + 正在检查登录环境(进度条)                      */
+  .act2 .layout2{position:absolute;inset:0;display:grid;grid-template-columns:minmax(360px,44%) 1fr;
+    align-items:center;gap:0 3vw;padding:0 4.5vw}
+  .colL{min-width:0}
+  .colR{display:flex;flex-direction:column;align-items:flex-end;gap:22px;min-width:0}
+
+  .brand550{font-size:clamp(44px,5vw,88px);font-weight:800;letter-spacing:.01em;line-height:.92;
+    opacity:0;transform:translateY(10px)}
+  .stage.play .brand550{animation:l-line 520ms cubic-bezier(.16,1,.3,1) .25s both}
+  .brand550 small{display:block;font-family:var(--mono);font-size:clamp(11px,.95vw,13px);font-weight:400;
+    letter-spacing:.3em;color:var(--dim);margin-top:14px;text-transform:uppercase}
+
+  /* 服务器数据读取 / 比对面板 */
+  .readPanel{margin-top:30px;border:1px solid var(--line);background:rgba(238,243,248,.025);
+    position:relative;overflow:hidden;opacity:0}
+  .stage.play .readPanel{animation:l-line 460ms ease-out .6s both}
+  .readPanel .head{display:flex;justify-content:space-between;gap:10px;padding:10px 14px;
+    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+  .readPanel .head b{color:var(--ink);font-weight:600}
+  .rows{height:210px;overflow:hidden;font-family:var(--mono);font-size:11.5px;padding:8px 14px 0}
+  .rows div{display:flex;gap:10px;padding:3px 0;color:var(--dim);animation:l-row .2s ease-out both}
+  .rows div b{color:var(--ink);font-weight:500;flex:0 0 92px}
+  .rows div i{font-style:normal;flex:0 0 62px;opacity:.7}
+  .rows div s{text-decoration:none;margin-left:auto;color:var(--ink);opacity:.75}
+  .rows div.hit b,.rows div.hit s{color:#fff}
+  @keyframes l-row{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+  .cmp{padding:10px 14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:12px;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .cmp .bar{flex:1;margin:0}
+  .cmp em{font-style:normal;color:var(--ink);min-width:42px;text-align:right}
+
+  /* 放大的身份许可卡 + 动态效果 */
+  .idcard2{width:clamp(430px,35vw,580px);border:1px solid var(--line);position:relative;overflow:hidden;
+    background:linear-gradient(155deg,rgba(238,243,248,.08),rgba(238,243,248,.018));padding:22px 22px 18px;
+    opacity:0;clip-path:inset(0 100% 0 0)}
+  .stage.play .idcard2{animation:l-card 560ms cubic-bezier(.16,1,.3,1) .8s both}
+  /* 流光：循环扫过整张卡 */
+  .idcard2::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(102deg,transparent 42%,rgba(255,255,255,.10) 50%,transparent 58%);
+    transform:translateX(-130%);animation:l-shine 4.6s ease-in-out 1.8s infinite}
+  @keyframes l-shine{0%{transform:translateX(-130%)}55%,100%{transform:translateX(130%)}}
+  /* 全息扫描线：细亮线自上而下循环 */
+  .idcard2 .scan{position:absolute;left:0;right:0;height:1px;top:0;pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(238,243,248,.55),transparent);
+    animation:l-cardscan 3.4s linear 1.6s infinite}
+  @keyframes l-cardscan{0%{top:0;opacity:0}8%{opacity:1}92%{opacity:1}100%{top:100%;opacity:0}}
+  .idHead2{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+  .idHead2 b{color:var(--ink);font-weight:700;letter-spacing:.28em}
+  .idHead2 span:last-child{margin-left:auto}
+  .idBody2{display:flex;gap:20px;padding:18px 0 16px}
+  .idPhoto2{width:118px;height:146px;flex:0 0 auto;border:1px solid var(--line);position:relative;overflow:hidden;
+    background:rgba(238,243,248,.05) center/cover no-repeat;opacity:0}
+  .stage.play .idPhoto2{animation:l-line 380ms ease-out 1.25s both}
+  /* 照片位自身也在被扫描 */
+  .idPhoto2::after{content:"";position:absolute;left:0;right:0;height:26px;top:-26px;
+    background:linear-gradient(180deg,transparent,rgba(238,243,248,.20),transparent);
+    animation:l-photocan 2.6s ease-in-out 1.6s infinite}
+  @keyframes l-photocan{0%{top:-26px}70%,100%{top:100%}}
+  .idPhoto2 span{position:absolute;inset:auto 0 8px;text-align:center;font-family:var(--mono);
+    font-size:9px;letter-spacing:.24em;color:var(--dim)}
+  .idMeta2{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .idMeta2 .name{font-size:clamp(24px,2.1vw,34px);font-weight:700;letter-spacing:.03em;opacity:0}
+  .stage.play .idMeta2 .name{animation:l-line 380ms ease-out 1.4s both}
+  .idMeta2 .en{font-family:var(--mono);font-size:10.5px;letter-spacing:.24em;color:var(--dim);opacity:0}
+  .stage.play .idMeta2 .en{animation:l-line 380ms ease-out 1.55s both}
+  .idRow2{display:flex;justify-content:space-between;gap:12px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.12em;color:var(--dim);opacity:0}
+  .idRow2 b{color:var(--ink);font-weight:500}
+  .stage.play .idRow2{animation:l-line 380ms ease-out both}
+  .stage.play .idRow2:nth-of-type(1){animation-delay:1.7s}
+  .stage.play .idRow2:nth-of-type(2){animation-delay:1.85s}
+  .idFoot2{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+    border-top:1px solid var(--line);padding-top:14px;opacity:0}
+  .stage.play .idFoot2{animation:l-line 400ms ease-out 2.05s both}
+  .idBars2{display:flex;gap:2px;height:34px;align-items:flex-end}
+  /* 条纹要"活"：底部对齐做 scaleY 呼吸，每根错开相位（延迟在 JS 里给） */
+  .idBars2 i{display:block;width:2.5px;background:var(--ink);opacity:.8;
+    transform-origin:bottom;animation:l-bars 1.5s ease-in-out infinite alternate}
+  @keyframes l-bars{0%{transform:scaleY(.55)}100%{transform:scaleY(1)}}
+  .idFoot2 em{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.2em;color:var(--dim)}
+  /* 结尾盖章：核验通过 */
+  .stamp{position:absolute;right:18px;bottom:52px;border:2px solid var(--ink);padding:6px 12px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--ink);opacity:0;
+    transform:rotate(-8deg) scale(1.6)}
+  .stamp.on{animation:l-stamp 260ms cubic-bezier(.2,1.5,.4,1) both}
+  @keyframes l-stamp{from{opacity:0;transform:rotate(-8deg) scale(1.6)}to{opacity:1;transform:rotate(-8deg) scale(1)}}
+
+  /* 右下：地球 + UEG + 正在检查登录环境 */
+  /* 地球这一列：父层必须始终可见 —— 地球是从第一幕"飞"过来的，
+     如果给父层加淡入动画，飞行中的地球会被一起压成透明（CSS 动画还压得过高内联样式）。 */
+  .globePos2{display:flex;flex-direction:column;align-items:center;gap:0;
+    width:clamp(150px,12vw,200px);opacity:1}
+  .stage.play .globePos2 > *:not(.ball){animation:l-line 460ms ease-out .75s both}
+  .globePos2 .ball{width:100%;aspect-ratio:1;position:relative}
+  .globePos2 .word{font-size:clamp(26px,2.2vw,38px);font-weight:800;letter-spacing:.16em;margin-top:12px}
+  .globePos2 .env{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--dim);
+    margin-top:8px;text-transform:uppercase;white-space:nowrap}
+  .globePos2 .pct{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--dim);margin-top:6px}
+
+  @media (prefers-reduced-motion: reduce){
+    .brand550,.readPanel,.idcard2,.idPhoto2,.idMeta2 .name,.idMeta2 .en,.idRow2,.idFoot2,.globePos2{opacity:1 !important;animation:none !important}
+    .idcard2{clip-path:none !important}
+    .idcard2::before,.idcard2 .scan,.idPhoto2::after{animation:none !important;display:none !important}
+  }
+
+  /* ═══ 第二幕 v3：左 1/4 终端 · 中 1/2 员工卡 · 右 1/4 地球 ═══════════════
+     终端参考皮肤里对话框那个 550C：点阵字形 + 流式输出的代码加载动画。
+     注意类名别再跟已有的撞（.bar/.grid 都撞过一次，这次用 .titleBar）。      */
+  .act2 .layout2{grid-template-columns:24% 1fr 21%;gap:0 2.2vw;padding:0 3vw}
+  .colL{min-width:0;display:flex;flex-direction:column;justify-content:center;height:100%}
+  .term{width:100%;height:min(66vh,560px);border:1px solid rgba(238,243,248,.26);
+    background:linear-gradient(180deg,rgba(238,243,248,.05),rgba(8,10,14,.72));
+    display:flex;flex-direction:column;overflow:hidden;opacity:0;
+    box-shadow:0 0 44px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.02)}
+  .stage.play .term{animation:l-line 460ms ease-out .35s both}
+  .term .titleBar{display:flex;align-items:center;gap:7px;padding:8px 11px;
+    border-bottom:1px solid rgba(238,243,248,.16);background:rgba(238,243,248,.055)}
+  .term .titleBar u{display:block;width:7px;height:7px;border-radius:50%;background:rgba(238,243,248,.32)}
+  .term .titleBar span{margin-left:6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;
+    color:rgba(238,243,248,.62)}
+
+  /* 点阵 550C：每个字形是 4x5 的方块矩阵，跟皮肤里那个一致 */
+  .pixel550{display:flex;gap:7px;padding:14px 14px 12px;border-bottom:1px solid rgba(238,243,248,.1)}
+  .pixel550 .glyph{display:grid;grid-template-columns:repeat(4,7px);grid-auto-rows:7px;gap:2px}
+  .pixel550 .glyph i{background:transparent;display:block}
+  .pixel550 .glyph i.on{background:#eef3f8;box-shadow:0 0 7px rgba(238,243,248,.4)}
+  .pixel550 .glyph i.on.ghost{background:rgba(238,243,248,.22);box-shadow:none}
+
+  /* 流式输出区 */
+  .termBody{flex:1;min-height:0;overflow:hidden;font-family:var(--mono);font-size:10.5px;
+    line-height:1.66;padding:8px 12px 0;white-space:pre}
+  .termBody div{animation:l-row .16s ease-out both}
+  .termBody div b{color:#fff;font-weight:500}
+  .termBody div i{font-style:normal;color:rgba(238,243,248,.42)}
+  .termBody div u{text-decoration:none;color:rgba(238,243,248,.88)}
+  .termBody .cursorLine{display:flex;align-items:center;gap:6px;color:rgba(238,243,248,.6)}
+  .cursor{display:inline-block;width:7px;height:12px;background:#eef3f8;animation:l-blink 1s steps(2,end) infinite}
+  @keyframes l-blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+
+  /* 终端底部：比对进度 */
+  .term .cmp{border-top:1px solid rgba(238,243,248,.16);padding:9px 12px;display:flex;align-items:center;
+    gap:10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:rgba(238,243,248,.6);
+    text-transform:uppercase}
+  .term .cmp .cmpBar{flex:1;height:3px;background:rgba(238,243,248,.14);position:relative;overflow:hidden}
+  .term .cmp .cmpBar i{position:absolute;inset:0 100% 0 0;background:var(--ink)}
+
+  /* 中间 1/2：员工卡放大铺满 */
+  .colR{align-items:stretch}
+  .colG{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%}
+
+  /* ── 三列等高 + 卡片内部铺开（上一版卡片内容挤在左上角、右半边是空的）── */
+  .term{height:min(62vh,520px)}
+  .idcard2{width:100%;max-width:none;height:min(62vh,520px);
+    display:flex;flex-direction:column}
+  .idBody2{flex:1;min-height:0;display:grid;grid-template-columns:132px 1fr 104px;gap:20px;
+    padding:18px 0 16px;align-items:start}
+  .idPhoto2{width:132px;height:164px}
+  .idMain{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .idMain .name{font-size:clamp(26px,2.3vw,38px);font-weight:700;letter-spacing:.03em;opacity:0}
+  .stage.play .idMain .name{animation:l-line 380ms ease-out 1.4s both}
+  .idMain .en{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;
+    color:rgba(238,243,248,.6);opacity:0}
+  .stage.play .idMain .en{animation:l-line 380ms ease-out 1.55s both}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:9px 22px;margin-top:4px}
+  .fields div{display:flex;flex-direction:column;gap:3px;opacity:0}
+  .stage.play .fields div{animation:l-line 340ms ease-out both}
+  .stage.play .fields div:nth-child(1){animation-delay:1.7s}
+  .stage.play .fields div:nth-child(2){animation-delay:1.76s}
+  .stage.play .fields div:nth-child(3){animation-delay:1.82s}
+  .stage.play .fields div:nth-child(4){animation-delay:1.88s}
+  .stage.play .fields div:nth-child(5){animation-delay:1.94s}
+  .stage.play .fields div:nth-child(6){animation-delay:2s}
+  .stage.play .fields div:nth-child(7){animation-delay:2.06s}
+  .fields span{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;
+    color:rgba(238,243,248,.45);text-transform:uppercase}
+  .fields b{font-size:12.5px;font-weight:500;color:var(--ink);letter-spacing:.02em}
+  /* 二维码：用 CSS grid 画点阵，图案由证件编号决定（同一张卡永远一样） */
+  .qr{display:grid;gap:2px;padding:8px;border:1px solid rgba(238,243,248,.24);
+    background:rgba(8,10,14,.5);opacity:0;justify-self:end}
+  .stage.play .qr{animation:l-line 380ms ease-out 1.9s both}
+  .qr i{width:4px;height:4px;display:block;background:transparent}
+  .qr i.on{background:#eef3f8}
+  .idcard2 .idHead2{padding-bottom:12px}
+
+
+  .readPanel{border-color:rgba(238,243,248,.22);background:rgba(238,243,248,.045)}
+  .readPanel .head{color:rgba(238,243,248,.62)}
+  .rows div{color:rgba(238,243,248,.5)}
+  .rows div i{opacity:1;color:rgba(238,243,248,.62)}
+  .rows div s{opacity:1;color:rgba(238,243,248,.85)}
+  .cmp{color:rgba(238,243,248,.62)}
+  .idcard2{border-color:rgba(238,243,248,.26);
+    background:linear-gradient(155deg,rgba(238,243,248,.12),rgba(238,243,248,.035))}
+  .idHead2{color:rgba(238,243,248,.62)}
+  .idMeta2 .en{color:rgba(238,243,248,.6)}
+  .idRow2{color:rgba(238,243,248,.6)}
+  .idPhoto2 span{color:rgba(238,243,248,.6)}
+  .idFoot2 em{color:rgba(238,243,248,.6)}
+  .globePos2 .env,.globePos2 .pct{color:rgba(238,243,248,.66)}
+  .brand550 small{color:rgba(238,243,248,.6)}
+
+  /* ── 开头那一次点击 ───────────────────────────────────────────────────
+     浏览器不允许无交互自动播放音频，所以整段起始要有一次用户手势；
+     点完之后所有拍都跟着音频走（语音没播完不推进）。                        */
+  .begin{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:12px;background:rgba(4,5,8,.72);backdrop-filter:blur(2px);
+    transition:opacity 420ms ease}
+  .begin.gone{opacity:0;pointer-events:none}
+  .begin button{appearance:none;font-family:var(--mono);font-size:14px;letter-spacing:.3em;
+    text-transform:uppercase;color:var(--ink);background:rgba(238,243,248,.05);
+    border:1px solid var(--line);padding:16px 34px;cursor:pointer;transition:border-color 160ms ease,box-shadow 220ms ease}
+  .begin button:hover{border-color:var(--ink);box-shadow:0 0 26px var(--glow)}
+  .begin em{font-family:var(--mono);font-size:10.5px;letter-spacing:.28em;color:var(--dim);font-style:normal}
+
+  /* 预览控制条：只在 ?debug=1 时出现，正片里不该有这条 */
+  .panel{display:none}
+  body.debug .panel{display:flex}
+  .panel{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);gap:14px;
+    align-items:center;padding:10px 16px;border:1px solid var(--line);background:rgba(9,11,15,.9);
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);z-index:40}
+
+  /* 代码汇聚层：全屏、压在 veil(z9) 之上，所以 logo 淡出时它已经能出现 */
+  .burst{position:fixed;inset:0;width:100vw;height:100vh;display:none;
+    pointer-events:none;z-index:30}
+  .burst.on{display:block}
+（只属于预览页） */
+  .panel{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);gap:14px;
+    align-items:center;padding:10px 16px;border:1px solid var(--line);background:rgba(9,11,15,.9);
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);z-index:20}
+  .panel button{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);
+    padding:7px 12px;cursor:pointer;letter-spacing:.1em}
+  .panel button:hover{border-color:var(--ink);box-shadow:0 0 12px var(--glow)}
+  .panel input[type=range]{width:320px;accent-color:var(--ink)}
+  .panel em{color:var(--ink);font-style:normal}
+  /* 窄窗口（没全屏）时三列会把身份卡挤扁：收掉一列、把宽度让给卡片。
+     这是截图里那种"卡片有点拥挤"的直接原因。 */
+  @media (max-width: 1500px) {
+    .layout2 { grid-template-columns: minmax(230px, 26%) minmax(0, 1fr); }
+  }
+  @media (max-width: 1080px) {
+    .layout2 { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="grid"></div>
+  <div class="scan"></div>
+  <div class="vignette"></div>
+  <div class="frame"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+
+  <div class="readout tl">UEG // 联合政府<br><b>ACCESS TERMINAL</b></div>
+  <div class="readout tr">SYS <b>READY</b><br><span id="clock">--:--:--</span></div>
+  <div class="readout bl">FOR ALL MANKIND</div>
+  <div class="readout br">REV <b>1.3</b> · LOCAL</div>
+
+  <div class="settleLine"></div>
+
+  <!-- 拍 A：正中大徽记（纯白图形 + 透明背景，已离线处理好） -->
+  <div class="sealWrap glitch" id="sealWrap">
+    <img class="seal" alt="UEG emblem" src="assets/ueg-seal-white.png">
+  </div>
+
+  <!-- 旋转地球：独立一层，浮在 logo 与文字【上方】 -->
+  <div class="globeLayer" id="globeLayer">
+    <canvas class="globe" id="globe" width="300" height="300" aria-hidden="true"></canvas>
+  </div>
+
+  <!-- 拍 B：扫描揭出的锁定版式（徽记 + 竖线 + UEG 联合政府 + 英文行） -->
+  <div class="lockWrap" id="lockWrap">
+    <span class="lockCrop">
+      <img class="lock" alt="UEG 联合政府" src="assets/ueg-lockup-white.png">
+    </span>
+    <div class="scanbar" id="scanbar"></div>
+    <div class="sweep"></div>
+  </div>
+
+  <!-- 交互入口：logo 缩小并进入待机循环之后淡出。
+       之后接 MiMo TTS 生成的配音：音频播完之前按钮保持等待态。 -->
+  <div class="gate" id="gate">
+    <button id="gateButton" type="button">申请访问许可</button>
+    <em>REQUEST ACCESS PERMISSION</em>
+  </div>
+  <!-- 配音槽：?voice=<url> 传入 MiMo TTS 生成的音频；没有就用浏览器 TTS 顶上 -->
+  <audio id="voice" preload="auto"></audio>
+</div>
+
+<!-- 代码汇聚成地球：全屏一层，压在遮罩之上 -->
+<canvas class="burst" id="burst" aria-hidden="true"></canvas>
+
+<!-- ═══ 第二幕：550C 核验身份 ═══════════════════════════════════════════
+     左：550C 正在核验身份 + 逐条状态；右靠中间：身份许可卡（姓名/照片可 DIY）；
+     最右：旋转地球 + UEG + 正在检查登录环境(进度条)；收尾：logo 重回中央。 -->
+<section class="act2 stage play" id="act2">
+  <div class="veil" id="veil"></div>
+
+  <div class="layout2">
+    <!-- 左 1/4：550C 终端（点阵字形 + 流式输出） -->
+    <div class="colL">
+      <div class="term">
+        <div class="titleBar"><u></u><u></u><u></u><span>550C · TERMINAL</span></div>
+        <div class="pixel550" id="pixel550"></div>
+        <div class="termBody" id="termBody"></div>
+        <div class="cmp">
+          <span>比对进度</span>
+          <div class="cmpBar"><i id="cmpBar"></i></div>
+          <em id="cmpPct">0%</em>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中间 1/2：员工身份许可卡 -->
+    <div class="colR">
+      <div class="idcard2">
+        <div class="scan"></div>
+        <div class="idHead2"><b>UEG</b><span>ACCESS PERMIT</span><span>身份许可</span></div>
+        <div class="idBody2">
+          <div class="idPhoto2" id="idPhoto"><span>PHOTO</span></div>
+          <div class="idMain">
+            <div class="name" id="idName">—</div>
+            <div class="en">LIU PEIQIANG · 联合政府 航天员大队</div>
+            <div class="fields">
+              <div><span>证件编号</span><b id="idSerial">—</b></div>
+              <div><span>签发机构</span><b id="idIssuer">UEG 联合政府 · 身份管理局</b></div>
+              <div><span>授权等级</span><b id="idLevel">LEVEL 3 · 生活区通行</b></div>
+              <div><span>有效期</span><b id="idValid">本次会话 · 随登出失效</b></div>
+              <div><span>许可范围</span><b id="idScope">550C 终端 · 只读查询</b></div>
+              <div><span>生物特征</span><b id="idBio">虹膜 · 指纹</b></div>
+              <div><span>核验状态</span><b id="idState">比对中…</b></div>
+            </div>
+          </div>
+          <div class="qr" id="idQr"></div>
+        </div>
+        <div class="idFoot2">
+          <div class="idBars2" id="idBars"></div>
+          <em>ISSUED BY UEG · VERIFIED BY 550C</em>
+        </div>
+        <div class="stamp" id="stamp">核验通过</div>
+      </div>
+    </div>
+
+    <!-- 右 1/4：旋转地球 + UEG + 正在检查登录环境 -->
+    <div class="colG">
+      <div class="globePos2">
+        <!-- 第一幕那颗地球会被搬到这里继续转，不必重开一份 -->
+        <div class="ball" id="globeSlot"></div>
+        <div class="word">UEG</div>
+        <div class="env">正在检查登录环境</div>
+        <div class="bar"><i id="bar"></i></div>
+        <div class="pct" id="pct">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="finale" id="finale">
+    <img src="assets/ueg-lockup-white.png" alt="UEG 联合政府">
+  </div>
+</section>
+
+<div class="panel">
+  <button id="replay">重播</button>
+  <span>时间轴</span>
+  <input id="seek" type="range" min="0" max="3200" value="0" step="10">
+  <em id="ms">0000 ms</em>
+  <span>总 3.2s 后进入待机循环</span>
+</div>
+
+<script src="assets/ueg-land.js?v=13"></script>
+<script>
+  const stage = document.getElementById('stage')
+  const seek = document.getElementById('seek')
+  const msLabel = document.getElementById('ms')
+
+  function play() {
+    stage.classList.remove('play')
+    void stage.offsetWidth
+    stage.classList.add('play')
+    document.getAnimations().forEach((animation) => animation.play())
+  }
+  /** 定格到某一毫秒：普通文档 + document.getAnimations()，取帧可靠。 */
+  function seekTo(ms) {
+    stage.classList.add('play')
+    for (const animation of document.getAnimations()) {
+      animation.pause()
+      try { animation.currentTime = ms } catch (error) { /* 无限循环的不参与 */ }
+    }
+    msLabel.textContent = String(ms).padStart(4, '0') + ' ms'
+  }
+  document.getElementById('replay').addEventListener('click', () => { play(); seek.value = '0' })
+  seek.addEventListener('input', () => seekTo(Number(seek.value)))
+
+  const clock = document.getElementById('clock')
+  const tick = () => { clock.textContent = new Date().toTimeString().slice(0, 8) }
+  tick(); setInterval(tick, 1000)
+
+  const at = new URLSearchParams(location.search).get('at')
+  if (at !== null) setTimeout(() => { seekTo(Number(at)); seek.value = at }, 80)
+  else play()
+  window.seekTo = seekTo
+  window.replay = play
+
+  /* ── 配音槽 ───────────────────────────────────────────────────────────────
+     MiMo TTS 生成的音频用 ?voice=<url> 传进来。浏览器不允许无交互自动播放，
+     所以第一次点击之后再播；音频结束会派发 ueg:voice-end，后续每一幕的推进
+     都挂在这个事件上（语音没播完不推进 —— 上游那套节奏就是这么来的）。   */
+  const voice = document.getElementById('voice')
+  const voiceUrl = new URLSearchParams(location.search).get('voice')
+  if (voiceUrl !== null) voice.src = voiceUrl
+  voice.addEventListener('ended', () => document.dispatchEvent(new CustomEvent('ueg:voice-end')))
+  let voiceStarted = false
+  const startVoice = () => {
+    if (voiceStarted || voiceUrl === null || voice.src === '') return
+    voiceStarted = true
+    voice.play().catch(() => { /* 仍然被拒就安静地跳过，动画继续 */ })
+  }
+  document.addEventListener('click', startVoice, { once: true })
+
+  /* ── 第一个交互点：申请访问许可 ───────────────────────────────────────────
+     点击后按钮进入"已受理"等待态；真正的授权步骤（身份确认 → 读取权限 → 核验）
+     接着往下做。这里先把交互闭环和事件打通。                              */
+  /* ── 动态旋转地球 ─────────────────────────────────────────────────────────
+     纹理直接用徽记里那颗地球本身（assets/ueg-seal-white.png 的白色不透明部分）。
+     透视投影下，屏幕上的圆面与可见半球一一对应，所以
+     「屏幕像素 → 球面法线 → 绕极轴转 θ → 回到同一投影采样」就是几何正确的自转，
+     不是把一张平面图滚过去。与「申请访问许可」按钮同时出现（1980ms），之后一直转。 */
+  const globe = document.getElementById('globe')
+  const gctx = globe.getContext('2d')
+  const GLOBE_START = 1980                        // 与「申请访问许可」同时出现
+  const DEG_PER_MS = 0.02                         // ≈20°/s，一圈约 18 秒
+  let rafId = null, clock0 = 0
+  const dots = []
+
+  /* 点云地球（纯手搓，不用任何贴图库）：
+     陆地点云由 preview/make-land.py 预先从徽记那颗地球烘出来（assets/ueg-land.js），
+     页面只解码字节、不读画布像素 —— 所以 file:// 双击打开也能正常显示。
+     每帧把这些点绕极轴转 θ、做正交投影，按朝向分档衰减。 */
+  {
+    const packed = atob(window.UEG_LAND ?? '')
+    for (let i = 0; i + 1 < packed.length; i += 2) {
+      dots.push([
+        ((((packed.charCodeAt(i) / 255) * 180 - 90) * Math.PI) / 180),
+        ((((packed.charCodeAt(i + 1) / 255) * 360 - 180) * Math.PI) / 180),
+      ])
+    }
+    console.info(`UEG globe: 陆地点 ${String(dots.length)} 个`)
+  }
+
+  function drawGlobe(ms) {
+    const size = globe.width
+    const half = size / 2
+    const R = half - 12
+    gctx.clearRect(0, 0, size, size)
+
+    // 球体底面（极轻）+ 一圈边线：先立住"这是个球"
+    const shade = gctx.createRadialGradient(half - R * 0.35, half - R * 0.35, R * 0.08, half, half, R)
+    shade.addColorStop(0, 'rgba(238,243,248,.10)')
+    shade.addColorStop(1, 'rgba(238,243,248,.012)')
+    gctx.beginPath(); gctx.arc(half, half, R, 0, Math.PI * 2)
+    gctx.fillStyle = shade; gctx.fill()
+    gctx.beginPath(); gctx.arc(half, half, R, 0, Math.PI * 2)
+    gctx.strokeStyle = 'rgba(238,243,248,.20)'; gctx.lineWidth = 1; gctx.stroke()
+
+    if (dots.length === 0) return
+    const theta = (Math.max(0, ms - GLOBE_START) * DEG_PER_MS * Math.PI) / 180
+    /* 地球本体就是一串代码：每 6 个点取 1 个画成两位十六进制字符，其余用极小点补密度。
+       所以这颗星球是"用代码流拼出来的"，不存在从代码换成另一颗球的交接。 */
+    gctx.fillStyle = '#eef3f8'
+    for (let index = 0; index < dots.length; index += 1) {
+      const [lat, lon] = dots[index]
+      const facing = Math.cos(lon + theta)
+      if (facing <= 0) continue
+      const x = half + Math.sin(lon + theta) * Math.cos(lat) * R
+      const y = half - Math.sin(lat) * R
+      if (index % 6 === 0) {
+        drawGlyph(gctx, (index * 37) % 256, x - 3, y - 3, 6 + 3 * facing, 0.3 + 0.65 * facing)
+      } else {
+        gctx.globalAlpha = 0.2 + 0.45 * facing
+        gctx.fillRect(x, y, 1.2, 1.2)
+      }
+    }
+    gctx.globalAlpha = 1
+  }
+
+  /** 播放时按真实时钟驱动；定格时由 seekTo 直接喂毫秒数（截图取帧就靠它）。 */
+  function globeLoop() {
+    rafId = requestAnimationFrame(globeLoop)
+    // 不可见时不画：省掉与代码层抢帧的那段负载，交接处就不会有双份绘制的顿挫
+    if (document.getElementById('globeLayer').style.opacity === '0') return
+    drawGlobe(performance.now() - clock0)
+  }
+
+  /* ── 代码汇聚成地球 ──────────────────────────────────────────────────────
+     纯 logo 淡出之后：代码从屏幕四边同时闪现 → 向目标点汇聚 → 落成旋转地球的
+     点阵（与真地球同一套正交投影、同一个旋转相位）→ 交接时看不出接缝。 */
+  const burst = document.getElementById('burst')
+  const bctx = burst.getContext('2d')
+  const HEX = '0123456789ABCDEF'
+  const EDGE_PAD = 26
+
+  /* 字符图集：把 "00".."FF" 256 个两位十六进制预先画进一张小画布。
+     之后每帧只做 drawImage —— 逐字 fillText 正是之前几帧卡顿的根源。
+     地球本体也用这套字符，所以"代码汇聚成的地球"和之后旋转的地球是同一种东西，
+     不存在"换成另一颗地球"的交接，也就没有接缝与顿挫。 */
+  const GLYPH_COLS = 16
+  const CELL = 26
+  const atlas = document.createElement('canvas')
+  atlas.width = GLYPH_COLS * CELL
+  atlas.height = GLYPH_COLS * CELL
+  /* 另烘一张"发光的"图集：把模糊与辉光都提前画进去，
+     运行时只多一次 drawImage，就能让光渗进暗背景，而不是硬生生的纯白贴片。 */
+  const atlasGlow = document.createElement('canvas')
+  atlasGlow.width = GLYPH_COLS * CELL
+  atlasGlow.height = GLYPH_COLS * CELL
+  {
+    const actx = atlas.getContext('2d')
+    actx.font = '600 17px ui-monospace, "Cascadia Mono", Consolas, monospace'
+    actx.textBaseline = 'top'
+    actx.fillStyle = '#eef3f8'
+    const gctx2 = atlasGlow.getContext('2d')
+    gctx2.font = '600 17px ui-monospace, "Cascadia Mono", Consolas, monospace'
+    gctx2.textBaseline = 'top'
+    gctx2.fillStyle = 'rgba(238,243,248,.55)'
+    gctx2.shadowColor = 'rgba(238,243,248,.9)'
+    gctx2.shadowBlur = 7
+    for (let i = 0; i < 256; i += 1) {
+      const gx = (i % GLYPH_COLS) * CELL + 2
+      const gy = Math.floor(i / GLYPH_COLS) * CELL + 3
+      actx.fillText(HEX[i >> 4] + HEX[i & 15], gx, gy)
+      gctx2.fillText(HEX[i >> 4] + HEX[i & 15], gx, gy)
+      gctx2.fillText(HEX[i >> 4] + HEX[i & 15], gx, gy)
+    }
+  }
+  /** 每个字符的"墨水浓度"（0~1）：用于把不同字形的视觉亮度拉齐。
+      256 个字形里 ink 差别很大（11 很淡、8B 很浓），不补偿就会忽明忽暗、看不清。 */
+  const cellInk = new Float32Array(256)
+  let inkMean = 0.4
+  {
+    const actx2 = atlas.getContext('2d')
+    let sum = 0
+    for (let i = 0; i < 256; i += 1) {
+      const sx = (i % GLYPH_COLS) * CELL
+      const sy = Math.floor(i / GLYPH_COLS) * CELL
+      const px = actx2.getImageData(sx, sy, CELL, CELL).data
+      let acc = 0
+      for (let k = 3; k < px.length; k += 4) acc += px[k]
+      cellInk[i] = acc / (CELL * CELL * 255)
+      sum += cellInk[i]
+    }
+    inkMean = Math.max(0.06, sum / 256)
+  }
+  /** 画一个字符：先铺一层辉光，再压上清晰的字形。
+      注意不做亮度归一化 —— 亮度差是刻意保留的，靠"规划落点"来用（轮廓亮、内部暗）。 */
+  const drawGlyph = (ctx, cell, x, y, size, alpha) => {
+    const sx = (cell % GLYPH_COLS) * CELL
+    const sy = Math.floor(cell / GLYPH_COLS) * CELL
+    ctx.globalAlpha = alpha * 0.5
+    ctx.drawImage(atlasGlow, sx, sy, CELL, CELL, x, y, size, size)
+    ctx.globalAlpha = alpha
+    ctx.drawImage(atlas, sx, sy, CELL, CELL, x, y, size, size)
+  }
+
+  let burstSeeds = null, burstStart = 0, burstRaf = null
+
+  /* 页面一加载就在四周（不是等 1980ms 才冒出来），先缓缓流动，到点再卷成地球。 */
+  const BURST_CONVERGE_MS = 1600  // 汇聚时长
+  let burstConvergeAt = Infinity  // 触发时刻：由 begin() 在第 1 句播完后设置；Infinity = 不汇聚
+
+  function buildBurstSeeds() {
+    burstSeeds = []
+    // 关键：点集必须与 canvas 地球完全一致（地球画的是 i % 6 === 0 的那些点）。
+    // 否则汇聚落定的一瞬间密度/大小/亮度会跳一下，看着就是"卡顿"。
+    const glyphDots = []
+    for (let i = 0; i < dots.length; i += 1) {
+      if (i % 6 === 0) glyphDots.push(i)
+    }
+    // 前 360 个就是开场那层稀疏细雨；其余在汇聚过程中淡入 ——
+    // 前期保持稀疏（好看），落定时刚好等于地球（无缝）。
+    const DRIZZLE = Math.min(360, glyphDots.length)
+    for (let i = 0; i < glyphDots.length; i += 1) {
+      const dot = glyphDots[i]
+      burstSeeds.push({
+        x: Math.random(),
+        y: Math.random(),
+        dot,
+        cell: (dot * 37) % 256,
+        delay: Math.random() * 500,
+        fade: 700 + Math.random() * 700,
+        phase: Math.random() * Math.PI * 2,
+        wander: 14 + Math.random() * 34,
+        speed: 0.00013 + Math.random() * 0.00022,
+        late: i >= DRIZZLE,
+      })
+    }
+  }
+
+  function drawBurst(now) {
+    const w = burst.width
+    const h = burst.height
+    bctx.clearRect(0, 0, w, h)
+    if (burstSeeds === null) return
+    const t = now - burstStart
+    const slot = document.getElementById('globeLayer').getBoundingClientRect()
+    const cx = slot.left + slot.width / 2
+    const cy = slot.top + slot.height / 2
+    const R = Math.max(24, slot.width / 2 - 6)
+    // 与 drawGlobe 同一基准：都从 GLOBE_START 起算
+    const theta = (Math.max(0, now - clock0 - GLOBE_START) * DEG_PER_MS * Math.PI) / 180
+    const ease = (pp) => {
+      const x = Math.max(0, Math.min(1, pp))
+      return x * x * (3 - 2 * x)
+    }
+    const converge = burstConvergeAt === Infinity ? 0 : ease((t - burstConvergeAt) / BURST_CONVERGE_MS)
+    bctx.fillStyle = '#ffffff'
+    // 让 burst 的落定画面 = canvas 地球的画面：尺寸与亮度都照地球的公式来
+    // （地球在 300px 背板上画 6 + 3×朝向，所以这里要乘上槽位相对 300 的缩放比）。
+    const scale = slot.width > 0 ? slot.width / 300 : 1
+    // 地球画布里还有一层"球体底面 + 边线"，代码层不画的话交接时那圈会闪一下。
+    // 这里照它画一份，并且随汇聚进度淡入 —— 落定时二者逐像素一致。
+    // 底面别跟着 converge 一冒头就画：粒子还在远处时先浮出一圈轮廓，
+    // 会被读成「球先画好了、粒子再飞进去」。等聚到一半之后再淡入，
+    // 落定时 shell 仍然是 1，所以和地球画布的交接依旧逐像素一致。
+    const shell = ease((converge - 0.5) / 0.5)
+    if (shell > 0) {
+      bctx.globalAlpha = shell
+      const shade = bctx.createRadialGradient(cx - R * 0.35, cy - R * 0.35, R * 0.08, cx, cy, R)
+      shade.addColorStop(0, 'rgba(238,243,248,.10)')
+      shade.addColorStop(1, 'rgba(238,243,248,.012)')
+      bctx.beginPath(); bctx.arc(cx, cy, R, 0, Math.PI * 2)
+      bctx.fillStyle = shade; bctx.fill()
+      bctx.beginPath(); bctx.arc(cx, cy, R, 0, Math.PI * 2)
+      bctx.strokeStyle = 'rgba(238,243,248,.20)'; bctx.lineWidth = 1; bctx.stroke()
+      bctx.globalAlpha = 1
+    }
+    bctx.fillStyle = '#ffffff'   // 上面画球底用过渐变，这里恢复成画字符的白色
+    for (const seed of burstSeeds) {
+      const reveal = Math.max(0, Math.min(1, (t - seed.delay) / seed.fade))
+      if (reveal <= 0) continue
+      // 后半批粒子在汇聚过程中淡入：前期保持稀疏细雨，落定时密度刚好等于地球
+      const lateIn = seed.late ? ease((converge - 0.35) / 0.65) : 1
+      if (lateIn <= 0) continue
+      const baseX = seed.x * w
+      const baseY = seed.y * h
+      // 缓缓流动：正弦漂移；开始汇聚后漂移幅度收掉（乘 1-converge）
+      const drift = (1 - converge) * seed.wander
+      const startX = baseX + Math.sin(t * seed.speed * 6.28 + seed.phase) * drift
+      const startY = baseY + Math.cos(t * seed.speed * 6.28 + seed.phase * 1.7) * drift * 0.7
+      const [lat, lon] = dots[seed.dot] ?? [0, 0]
+      const facing = Math.cos(lon + theta)
+      // 与 drawGlobe 完全相同的取点与偏移
+      const targetX = cx + Math.sin(lon + theta) * Math.cos(lat) * R
+      const targetY = cy - Math.sin(lat) * R
+      const x = startX + (targetX - startX) * converge
+      const y = startY + (targetY - startY) * converge
+      // 朝向背面时地球不画该点，这里也照做，避免落定差一口气
+      if (converge >= 1 && facing <= 0) continue
+      const glyphSize = (6 + 3 * facing) * scale
+      const offset = 3 * scale   // 与 drawGlobe 的 x-3 / y-3 对齐
+      // 拖尾：飞行时才有；落定后（converge=1）只画本体，和地球一致
+      const trails = converge >= 1 ? 1 : 3
+      for (let trail = trails - 1; trail >= 0; trail -= 1) {
+        const back = trail * 0.05
+        const px = x - (targetX - startX) * back
+        const py = y - (targetY - startY) * back
+        const alpha = trail === 0
+          ? (0.3 + 0.65 * Math.max(0, facing)) * converge + 0.18 * (1 - converge)
+          : 0.06 * (3 - trail) * (0.4 + 0.6 * converge)
+        drawGlyph(bctx, seed.cell, px - offset, py - offset, glyphSize * (trail === 0 ? 1 : 1.25), alpha * reveal * lateIn)
+      }
+    }
+    bctx.globalAlpha = 1
+  }
+
+  function burstLoop() {
+    burstRaf = requestAnimationFrame(burstLoop)
+    drawBurst(performance.now())
+  }
+
+  function startBurst() {
+    if (burstSeeds === null) buildBurstSeeds()
+    burst.width = Math.round(window.innerWidth)
+    burst.height = Math.round(window.innerHeight)
+    burst.classList.add('on')
+    burstStart = performance.now()
+    if (burstRaf === null) burstLoop()
+  }
+
+  /** 收尾：把真地球显出来，然后【下一帧】才撤代码层 ——
+      顺序反了（或同一帧里一隐一显）就会有一帧空白，看着就是交接处"一顿"。 */
+  function endBurst() {
+    if (burstRaf !== null) { cancelAnimationFrame(burstRaf); burstRaf = null }
+    document.getElementById('globeLayer').style.opacity = '1'
+    requestAnimationFrame(() => burst.classList.remove('on'))
+  }
+
+  /* ── 终幕：地球移到屏幕中央 → 化成代码 → 拼出 WELCOME BACK ──────────────
+     做法：离屏画一遍文字、读像素拿到字形，再降采样成落点；
+     起点复用地球表面的字符点（与 canvas 地球同一套取字规则），
+     所以"球变字"的过程是同一批字符在飞行，没有换主体。 */
+  const FINALE_TEXT = 'WELCOME BACK'
+  let textTargets = null
+  let finaleSeeds = null
+  let finaleStart = 0
+  let finaleRaf = null
+  let finaleOrigin = null      // 终幕开始时冻结的"地球此刻的屏幕位置"
+
+  function buildTextTargets() {
+    const board = document.createElement('canvas')
+    board.width = Math.round(window.innerWidth)
+    board.height = Math.round(window.innerHeight)
+    const bctx2 = board.getContext('2d')
+    bctx2.fillStyle = '#ffffff'
+    bctx2.textAlign = 'center'
+    bctx2.textBaseline = 'middle'
+    const fontOf = (size) => `800 ${String(size)}px "Segoe UI", Inter, system-ui, sans-serif`
+    const base = Math.round(board.height * 0.22)
+    bctx2.font = fontOf(base)
+    // 自适应宽度：量一下文字实际多宽，缩到屏宽的 86%，避免两头被切
+    const textWidth = bctx2.measureText(FINALE_TEXT).width
+    const fit = board.width * 0.86
+    if (textWidth > fit) bctx2.font = fontOf(Math.floor((base * fit) / textWidth))
+    bctx2.fillText(FINALE_TEXT, board.width / 2, board.height / 2)
+    const data = bctx2.getImageData(0, 0, board.width, board.height).data
+    const alphaAt = (x, y) => {
+      if (x < 0 || y < 0 || x >= board.width || y >= board.height) return 0
+      return data[(y * board.width + x) * 4 + 3]
+    }
+    // 位置规划：网格 + 轻微抖动采样（间距一致，不结块）
+    const hits = []
+    const step = 5
+    for (let py = 0; py < board.height; py += step) {
+      for (let px = 0; px < board.width; px += step) {
+        const jx = px + ((Math.random() * 3) | 0) - 1
+        const jy = py + ((Math.random() * 3) | 0) - 1
+        if (jx < 0 || jy < 0 || jx >= board.width || jy >= board.height) continue
+        if (alphaAt(jx, jy) <= 140) continue
+        // 判断这点是"字的轮廓"还是"字的内部"：八邻域里只要有一个在字外，就是轮廓。
+        // 之后把【亮粒子】安排在轮廓上、【暗粒子】安排在内部 —— 字形靠轮廓立起来，
+        // 内部有层次但不乱，整行看着才和谐。
+        let edge = false
+        for (let dy = -1; dy <= 1 && !edge; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (dx === 0 && dy === 0) continue
+            if (alphaAt(jx + dx * step, jy + dy * step) <= 140) {
+              edge = true
+              break
+            }
+          }
+        }
+        hits.push({ x: jx, y: jy, edge })
+      }
+    }
+    // 均匀抽稀到 1500 个，而不是截前 1500（否则下半/右半会缺）
+    const wanted = 1500
+    const stride = Math.max(1, Math.round(hits.length / wanted))
+    textTargets = hits.filter((_, index) => index % stride === 0).slice(0, wanted)
+  }
+
+  function startFinale() {
+    if (textTargets === null) buildTextTargets()
+    if (finaleSeeds === null) {
+      finaleSeeds = []
+      // 两池：墨多的当"亮粒子"，墨少的当"暗粒子"。落点已分好轮廓/内部，
+      // 于是亮粒子走轮廓、暗粒子填内部 —— 字靠轮廓立起来，内部有层次又不乱。
+      const bright = []
+      const dim = []
+      for (let i = 0; i < 256; i += 1) {
+        if (cellInk[i] >= inkMean) bright.push(i)
+        else dim.push(i)
+      }
+      const exact = []
+      for (let i = 0; i < dots.length; i += 1) {
+        if (i % 6 === 0) exact.push(i)
+      }
+      let brightN = 0
+      let dimN = 0
+      for (let n = 0; n < textTargets.length; n += 1) {
+        const target = textTargets[n]
+        const planned = target.edge ? bright[brightN++ % bright.length] : dim[dimN++ % dim.length]
+        if (n < exact.length) {
+          // 前 919 个正是 canvas 地球上的字符点 → 交接完全对得上
+          finaleSeeds.push({
+            dot: exact[n],
+            cell: (exact[n] * 37) % 256,
+            cellPlan: planned,
+            target: [target.x, target.y],
+            extra: false,
+          })
+        } else {
+          // 多出来的粒子在球化开时才淡入，球不会突然变密
+          const lat = (Math.random() - 0.5) * Math.PI
+          const lon = Math.random() * Math.PI * 2
+          finaleSeeds.push({
+            lat,
+            lon,
+            cell: (n * 53) % 256,
+            cellPlan: planned,
+            target: [target.x, target.y],
+            extra: true,
+          })
+        }
+      }
+    }
+    burst.width = Math.round(window.innerWidth)
+    burst.height = Math.round(window.innerHeight)
+    // 冻结地球此刻的位置：之后布局怎么变都不影响起点，球才是从"原地"出发的
+    const slot0 = document.getElementById('globeSlot').getBoundingClientRect()
+    finaleOrigin = {
+      // 实测（无头浏览器量过）：窄窗口下布局会把地球列推到最右边 ——
+      // 1570 宽的窗口里 globeSlot.left=1274，中心 1368，而窗口中心只有 785。
+      // 拿它当凝聚起点，粒子就先聚到右边再横移回中心，很出戏。
+      // 横向一律用画布中心（与终幕的落点一致），纵向保留地球的位置。
+      // 起点必须是【地球自己】的位置：终幕就是「别的都淡出、这颗地球飞到屏幕中央
+      // 并随移动放大」的过程 —— 起点写成画布中心的话位移就是零，那一段就没了。
+      // （启动时偏右的真因是窗口由小变全屏，已由上面的 resize 监听解决，不靠改这里。）
+      cx: slot0.left + slot0.width / 2,
+      cy: slot0.top + slot0.height / 2,
+      r: Math.max(24, slot0.width / 2 - 6),
+    }
+    burst.classList.add('on')
+    finaleStart = performance.now()
+    if (finaleRaf === null) finaleRaf = requestAnimationFrame(finaleLoop)
+  }
+
+  /* 终幕时间轴（毫秒）：移中 → 化字 → 停留 → 【散开】→ 之后由 runAct2 收尾 */
+  const FINALE = { move: 860, form: 1450, hold: 1900, scatter: 1150 }
+
+  function drawFinale(now) {
+    const w = burst.width
+    const h = burst.height
+    bctx.clearRect(0, 0, w, h)
+    if (finaleSeeds === null) return
+    const t = now - finaleStart
+    const ease = (pp) => {
+      const x = Math.max(0, Math.min(1, pp))
+      return x * x * (3 - 2 * x)
+    }
+    // 第一段：地球从它现在的位置移到屏幕中央并放大（起点已在 startFinale 里冻结）
+    const move = ease(t / FINALE.move)
+    const origin = finaleOrigin ?? { cx: w / 2, cy: h / 2, r: 90 }
+    const cx = origin.cx + (w / 2 - origin.cx) * move
+    const cy = origin.cy + (h / 2 - origin.cy) * move
+    const R = origin.r + (Math.min(w, h) * 0.3 - origin.r) * move
+    // 第二段：字符从球面飞出去，落到字形上
+    const form = ease((t - FINALE.move) / FINALE.form)
+    // 第四段：字拼好、停一会儿之后，粒子朝各自方向散开并淡出（比直接淡出画面有收束感）
+    const scatter = ease((t - FINALE.move - FINALE.form - FINALE.hold) / FINALE.scatter)
+    const theta = (Math.max(0, now - clock0 - GLOBE_START) * DEG_PER_MS * Math.PI) / 180
+    for (const seed of finaleSeeds) {
+      // 额外粒子：等球开始化开后才淡入，避免交接瞬间球面突然变密
+      const born = seed.extra ? Math.max(0, Math.min(1, (t - 700) / 700)) : 1
+      if (born <= 0) continue
+      const lat = seed.lat ?? (dots[seed.dot] ?? [0, 0])[0]
+      const lon = seed.lon ?? (dots[seed.dot] ?? [0, 0])[1]
+      const sphereX = cx + Math.sin(lon + theta) * Math.cos(lat) * R
+      const sphereY = cy - Math.sin(lat) * R
+      let x = sphereX + (seed.target[0] - sphereX) * form
+      let y = sphereY + (seed.target[1] - sphereY) * form
+      // 成字后用"规划好的"粒子（轮廓亮 / 内部暗）；切换发生在飞行途中，看不出来
+      const cell = form > 0.15 ? (seed.cellPlan ?? seed.cell) : seed.cell
+      // 散开：方向由该粒子自身的随机值决定，向外飞、越远越淡
+      if (scatter > 0) {
+        const angle = ((cell * 37 + (seed.dot ?? 0) * 11) % 360) * (Math.PI / 180)
+        const speed = 260 + ((cell * 53 + (seed.dot ?? 0) * 7) % 520)
+        x += Math.cos(angle) * speed * scatter
+        y += Math.sin(angle) * speed * scatter
+      }
+      const glyphSize = 6 + 9 * Math.max(move, form)
+      const half = glyphSize / 2
+      // 呼吸用全局同一相位：整行一起明灭，比每颗各自闪更稳、更流畅
+      const breathe = form >= 1 ? 0.94 + 0.06 * Math.sin(now * 0.0016) : 1
+      const alpha = (0.24 + 0.72 * Math.max(move, form)) * breathe * born * (1 - scatter)
+      if (alpha <= 0.01) continue
+      const sx = (cell % GLYPH_COLS) * CELL
+      const sy = Math.floor(cell / GLYPH_COLS) * CELL
+      bctx.globalAlpha = alpha * 0.55
+      bctx.drawImage(atlasGlow, sx, sy, CELL, CELL, x - half, y - half, glyphSize, glyphSize)
+      bctx.globalAlpha = alpha
+      bctx.drawImage(atlas, sx, sy, CELL, CELL, x - half, y - half, glyphSize, glyphSize)
+    }
+    bctx.globalAlpha = 1
+  }
+
+  function finaleLoop() {
+    finaleRaf = requestAnimationFrame(finaleLoop)
+    drawFinale(performance.now())
+  }
+
+  const originalPlay = play
+  play = function () {
+    originalPlay()
+    clock0 = performance.now()
+    if (rafId !== null) cancelAnimationFrame(rafId)
+    globeLoop()
+  }
+  const originalSeek = seekTo
+  seekTo = function (ms) {
+    originalSeek(ms)
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+    drawGlobe(ms)
+  }
+  window.seekTo = seekTo
+  window.replay = play
+
+  /* 页面一加载就先画一帧并启动循环 —— 不依赖时间轴的播放状态，
+     保证任何时刻（包括刚打开、还没到 1980ms）画布上都已经有地球。
+     "何时出现"仍由 CSS 的 l-appear 在 1980ms 控制，与按钮同步。 */
+  clock0 = performance.now()
+  globeLoop()
+  /* ── 配音引擎：两版声音（?voice=male|female）+ 静音开关（?audio=0）─────────
+     设计原则（用户明确要求）：**动画决定画面**，配音只是跟着画面播，绝不反过来卡画面。
+     所以这里只"发起播放"，从不 await；被浏览器的自动播放策略拦下时，
+     会在用户第一次点击页面时自动补播当前那一句 —— 不需要任何确认按钮。
+     以后接进插件时，这个开关放进控制面板让用户决定是否关闭配音。 */
+  // 相对路径：预览页（/ueg.html）解析成 /voice/，插件页（/ueg/）自动变成 /ueg/voice/
+  const VOICE_DIR = location.protocol === 'file:' ? 'file:///F:/项目/salt/ueg-voice/' : 'voice/'
+  // 默认女声（已定稿）；?voice=male 切男声；?audio=0 静音
+  const VOICE_VARIANT = new URLSearchParams(location.search).get('voice') === 'male' ? 'male' : 'female'
+  const AUDIO_ON = new URLSearchParams(location.search).get('audio') !== '0'
+  /* 整段旁白只加载【一个】音频文件，到哪一拍就 seek 到那一句的起点。
+     为什么不每句一个文件：按静音切分难免把一个词的尾音切给下一段，
+     播放时就变成"最后一个词没读完、卡一下又立马补上"。
+     单音轨 + seek 之后，句间没有任何重新加载与拼接 —— 这种断裂从生成条件上就消失了。 */
+  const CUES = { female: [0.08, 3.77, 8.63, 11.16, 13.95], male: [0, 4.66, 9.58, 12.27, 15.28] }
+  let cueTable = CUES
+  let pendingLine = 0
+  let pendingUntil = 0
+  // 异步读一次真实起点（重生成配音后无需改代码）；读不到就用内嵌这份
+  fetch(`${VOICE_DIR}voice-cues.json`)
+    .then((response) => response.json())
+    .then((table) => { cueTable = table })
+    .catch(() => {})
+
+  /* 每句一个独立音频文件 —— 这是最稳的：
+     单音轨 + seek 的每一版都在跟"切点在哪"较劲（下一句词头被读出来、硬切、URL 撑爆 431…）。
+     一个文件播完自然就停，物理上不可能串到下一句。
+     切分由 Python 逐句量出真实边界（见 split-voice.py / resplit.py）。 */
+  let audioCtx = null
+  let activeAudio = null
+
+  /** 第 n 句：播它自己的那个文件。从不 await，也不打断画面。 */
+  function playLine(n) {
+    if (!AUDIO_ON || n <= 0) return
+    if (activeAudio !== null) {
+      try { activeAudio.pause() } catch { /* 已经停了 */ }
+      activeAudio = null
+    }
+    const audio = new Audio(`${VOICE_DIR}voice-${VOICE_VARIANT}-${String(n)}.wav`)
+    activeAudio = audio
+    audio.play().then(() => { pendingLine = 0 }).catch(() => {
+      // 还没有用户手势：记下时限，等手势来了再补这一句
+      pendingLine = n
+      pendingUntil = performance.now() + 4000
+    })
+  }
+
+  function unlock() {
+    // 第一个手势也顺便把被挂起的 AudioContext 唤醒
+    if (audioCtx !== null && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
+    if (pendingLine <= 0 || performance.now() > pendingUntil) return
+    const n = pendingLine
+    pendingLine = 0
+    playLine(n)
+  }
+  document.addEventListener('pointerdown', unlock)
+  // 空格：第一幕时等于按下「申请访问许可」，之后各幕则跳到结尾；Esc：随时收尾退场。
+  // 这个动画有交互，所以没做点击跳过 —— 键盘跳过是更合适的出口。
+  let gateOpened = false
+let act2Started = false   // 第二幕只能开一次：按钮、自动播放、空格三条路都从这里过
+  let skipped = false
+  // 启动时会先从普通窗口切到全屏：窗口尺寸一变，画布的【属性尺寸】就和 CSS 的
+  // 100vw/100vh 对不上了，坐标被拉伸 —— 看起来就是初始凝聚点偏右。
+  // 预览时窗口不动，所以从来复现不出来；这时把尺寸和中心一起跟着更新就好。
+  window.addEventListener('resize', () => {
+    const w = Math.round(window.innerWidth)
+    const h = Math.round(window.innerHeight)
+    burst.width = w
+    burst.height = h
+    board.width = w
+    board.height = h
+    if (finaleOrigin !== null) finaleOrigin.cx = Math.round(w / 2)
+  })
+
+  function skipToEnd() {
+    if (skipped) return
+    skipped = true
+    try { if (burstRaf !== null) cancelAnimationFrame(burstRaf) } catch { /* 没在跑 */ }
+    try { if (finaleRaf !== null) cancelAnimationFrame(finaleRaf) } catch { /* 没在跑 */ }
+    try { if (activeAudio !== null) activeAudio.pause() } catch { /* 没在播 */ }
+    document.dispatchEvent(new CustomEvent('ueg:done'))
+    if (window.parent !== window) {
+      try { window.parent.postMessage('ueg:done', '*') } catch { /* 跨域就算了 */ }
+    } else {
+      // 独立打开（预览）时没有"上一层"可回，直接重播一次
+      window.setTimeout(() => { window.location.reload() }, 400)
+    }
+  }
+  document.addEventListener('keydown', (event) => {
+    unlock()
+    if (event.key === 'Escape') { event.preventDefault(); skipToEnd(); return }
+    if (event.key === ' ' || event.code === 'Space' || event.key === 'Enter') {
+      event.preventDefault()
+      const ready = document.querySelector('.stage.gate-ready') !== null
+      if (!gateOpened && ready) { gateOpened = true; runAct2(); return }
+      skipToEnd()
+    }
+  })
+  document.addEventListener('touchstart', unlock, { passive: true })
+
+  /* 第一幕节拍：动画自己走，配音跟着画面起。
+     台本已精简到 5 句，第一幕只有第 1 句（0s 起）——
+     原来第 2 句排在 3s，现在它是"点按后终端拉起"那一拍，故不在此处。 */
+  document.querySelector('.stage').classList.add('play')
+  startBurst()
+  playLine(1)
+  window.setTimeout(() => { burstConvergeAt = performance.now() - burstStart }, 2900)
+  window.setTimeout(() => {
+    endBurst()
+    document.querySelector('.stage').classList.add('gate-ready')
+    // 自动播放：有人不想点那个按钮。落定 3.5 秒后自动进入第二幕（?auto=0 关掉）。
+    if (new URLSearchParams(location.search).get('auto') !== '0') {
+      window.setTimeout(() => { if (!gateOpened) { gateOpened = true; runAct2() } }, 3500)
+    }
+  }, 4660)
+
+  /* ── 第二幕：550C 核验 ───────────────────────────────────────────────────
+     点「申请访问许可」之后：① 极快淡出（没有"已受理"）② 550C 正在核验身份
+     ③ 右侧靠中间拼装身份许可卡 ④ 右侧地球 + UEG + 正在检查登录环境(进度条)
+     ⑤ 淡出 → logo 重回屏幕中央 → 停留 → ⑥ 淡出，派发 ueg:done。
+     卡片的姓名/照片走 ?name= / ?photo=，换参数即可 DIY。                  */
+  const act2 = document.getElementById('act2')
+  const veil = document.getElementById('veil')
+  const finale = document.getElementById('finale')
+  const panels = [
+    document.querySelector('.colL'),
+    document.querySelector('.colR'),
+    document.querySelector('.colG'),
+  ]
+  const bar = document.getElementById('bar')
+  const pct = document.getElementById('pct')
+  const wait = (ms) => new Promise((done) => setTimeout(done, ms))
+  const fade = (el, to, ms) => {
+    el.style.transition = `opacity ${String(ms)}ms ease`
+    el.style.opacity = String(to)
+  }
+
+  {
+    const params = new URLSearchParams(location.search)
+    // 预览控制条只在 ?debug=1 出现；正片里不留
+    if (params.has('debug')) document.body.classList.add('debug')
+    document.getElementById('idName').textContent = params.get('name') ?? '刘培强'
+    const photo = params.get('photo')
+    // 头像：填纯文件名就当作 assets/ 里的图（如 me.png → assets/me.png，
+    // 预览页解析成 /assets/me.png、插件页解析成 /ueg/assets/me.png，两边都能取到）
+    // 头像优先取设置里选好的那张（设置会把图片缩成 256px 的 data URL 存在 localStorage，
+    // 所以这里先看 query，再看 localStorage —— 那条路不经过 URL，图片再大也不怕。
+    let photoValue = photo
+    if (photoValue === null || photoValue === '') {
+      try { photoValue = window.localStorage.getItem('dsh-550c-boot:login-photo') } catch { photoValue = null }
+      if (photoValue === '') photoValue = null
+    }
+    if (photoValue !== null) document.getElementById('idPhoto').style.backgroundImage = `url("${photoValue}")`
+    const serial = params.get('id') ?? `UEG-550C-${Math.random().toString(16).slice(2, 10).toUpperCase()}`
+    document.getElementById('idSerial').textContent = serial
+    // 卡片上其余字段也可以 DIY：设置里填了就覆盖，留空就用默认
+    const setIfGiven = (ident, key) => {
+      const value = params.get(key)
+      if (value !== null && value !== '') document.getElementById(ident).textContent = value
+    }
+    setIfGiven('idIssuer', 'issuer')
+    setIfGiven('idLevel', 'level')
+    setIfGiven('idValid', 'valid')
+    setIfGiven('idScope', 'scope')
+    setIfGiven('idBio', 'bio')
+    const bars = document.getElementById('idBars')
+    for (let i = 0; i < 40; i += 1) {
+      const item = document.createElement('i')
+      item.style.height = `${String(8 + ((i * 37 + serial.charCodeAt(i % serial.length) * 7) % 26))}px`
+      item.style.animationDelay = `${String(-i * 0.045)}s`   // 错开相位，条纹像在流动
+      bars.appendChild(item)
+    }
+    /* 二维码：由证件编号决定的点阵（同一张卡永远一样），带三个定位角 */
+    const qr = document.getElementById('idQr')
+    qr.style.gridTemplateColumns = 'repeat(21, 4px)'
+    let seed = 0
+    for (const char of serial) seed = (seed * 31 + char.charCodeAt(0)) % 100000
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648
+      return seed / 2147483648
+    }
+    const finder = (x, y) => {
+      const inside = (bx, by) => x >= bx && x < bx + 7 && y >= by && y < by + 7
+      if (!inside(0, 0) && !inside(14, 0) && !inside(0, 14)) return null
+      const dx = x < 7 ? x : x - 14
+      const dy = y < 7 ? y : y - 14
+      return dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4)
+    }
+    for (let y = 0; y < 21; y += 1) {
+      for (let x = 0; x < 21; x += 1) {
+        const cell = document.createElement('i')
+        const fixed = finder(x, y)
+        if (fixed === true || (fixed === null && rnd() > 0.55)) cell.className = 'on'
+        qr.appendChild(cell)
+      }
+    }
+  }
+
+  /* ── 550C 点阵字形：4x5 方块矩阵，跟皮肤里对话框那个一致 ─────────────── */
+  const GLYPHS = {
+    5: ['1110', '1000', '1110', '0001', '1110'],
+    0: ['1111', '1001', '1001', '1001', '1111'],
+    C: ['0111', '1000', '1000', '1000', '0111'],
+  }
+  {
+    const pixel = document.getElementById('pixel550')
+    for (const char of ['5', '5', '0', 'C']) {
+      const glyph = document.createElement('div')
+      glyph.className = 'glyph'
+      for (const row of GLYPHS[char]) {
+        for (const cell of row) {
+          const block = document.createElement('i')
+          if (cell === '1') block.className = 'on'
+          glyph.appendChild(block)
+        }
+      }
+      pixel.appendChild(glyph)
+    }
+  }
+
+  /* ── 终端流式输出：边读员工数据边比对，逐行吐出来 ─────────────────────── */
+  const SURNAMES = ['刘', '王', '张', '李', '陈', '周', '吴', '徐', '孙', '马', '朱', '胡', '林', '郭', '何', '高']
+  const GIVEN = ['培强', '启航', '子昂', '沐阳', '明远', '思远', '云舟', '星禾', '云帆', '远航', '若水', '知远', '长安', '望舒', '和一', '清越']
+  const GRADES = ['LEVEL 1', 'LEVEL 2', 'LEVEL 3', 'LEVEL 3', 'LEVEL 4', 'LEVEL 2']
+  const BOOT = [
+    '> mount /dev/ueg/roster --ro',
+    '> auth 550C --token ****',
+    'INFO  安全通道已建立 · TLS 1.3',
+    'INFO  读取联合政府员工库 (46 条)',
+  ]
+  const makeRoster = (count) => {
+    const list = []
+    for (let i = 0; i < count; i += 1) {
+      list.push({
+        id: `READ  0x${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
+        name: SURNAMES[i % SURNAMES.length] + GIVEN[(i * 5 + 3) % GIVEN.length],
+        grade: GRADES[i % GRADES.length],
+      })
+    }
+    return list
+  }
+
+  async function runAct2() {
+  // 一次性守卫：按钮点击 + 自动播放 + 空格可能几乎同时触发，
+  // 少了它第二幕会整段重播（语音也跟着重播一遍）。
+  if (act2Started) return
+  act2Started = true
+    // ① 极快淡出
+    veil.style.transition = 'opacity 180ms ease'
+    veil.style.opacity = '1'
+    await wait(200)
+    // ② 预加载页出现（动画此刻才开始，display:none → block 会重启动画）
+    act2.classList.add('on')
+    veil.style.transition = 'opacity 260ms ease'
+    veil.style.opacity = '0'
+    playLine(2)   // 第 2 句：Five-five-zero-C is verifying your identity.（与终端同时起）
+    //    同一颗 canvas 搬家，自转相位连续，看起来就是同一颗地球飞过去。
+    const layer = document.getElementById('globeLayer')
+    const first = layer.getBoundingClientRect()
+    document.getElementById('globeSlot').appendChild(layer)
+    Object.assign(layer.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
+      animation: 'none',
+      opacity: '1',
+      zIndex: '20',
+      transformOrigin: '0 0',
+      transform: 'none',
+      transition: 'none',
+    })
+    const last = layer.getBoundingClientRect()
+    const dx = first.left - last.left
+    const dy = first.top - last.top
+    const ratio = last.width === 0 ? 1 : first.width / last.width
+    layer.style.transform = `translate(${String(dx)}px, ${String(dy)}px) scale(${String(ratio)})`
+    void layer.offsetWidth
+    layer.style.transition = 'transform 1050ms cubic-bezier(.16,1,.3,1)'
+    layer.style.transform = 'none'
+    await wait(1150)
+    layer.style.zIndex = ''
+
+    // ④ 终端开始流式输出：先吐启动命令，再逐条读员工数据并比对
+    const roster = makeRoster(24)   // 原来 46 条要读 4.83s，太长；24 条 × 90ms ≈ 2.2s 刚好
+    const termBody = document.getElementById('termBody')
+    const cmpBar = document.getElementById('cmpBar')
+    const cmpPct = document.getElementById('cmpPct')
+    const push = (html) => {
+      const line = document.createElement('div')
+      line.innerHTML = html
+      termBody.insertBefore(line, cursorLine)
+      while (termBody.children.length > 15) termBody.removeChild(termBody.firstChild)
+    }
+    const cursorLine = document.createElement('div')
+    cursorLine.className = 'cursorLine'
+    cursorLine.innerHTML = '<span>&gt;</span><span class="cursor"></span>'
+    termBody.appendChild(cursorLine)
+    let cursor = 0
+    for (const line of BOOT) push(`<i>${line}</i>`)
+    // 终端读完再走进度条 —— 否则进度条 1.5 秒就起来，第 2 句还没念完，
+    // 视觉顺序错、配音也跟着叠在一起。
+    const feedDone = new Promise((resolve) => {
+      const feed = setInterval(() => {
+        if (cursor >= roster.length) {
+          clearInterval(feed)
+          push('<b>OK    比对完成 · 授权等级 LEVEL 3</b>')
+          cmpPct.textContent = '100%'
+          document.getElementById('idState').textContent = '比对完成'
+          playLine(3)   // 第 3 句：Access permit issued.（终端读完时）
+          resolve()
+          return
+        }
+        const entry = roster[cursor]
+        push(`<b>${entry.id}</b>  <u>${entry.name}</u>  <i>${entry.grade}</i>  <b>OK</b>`)
+        cursor += 1
+        const ratio = cursor / roster.length
+        cmpBar.style.inset = `0 ${String((1 - ratio) * 100)}% 0 0`
+        cmpPct.textContent = `${String(Math.round(ratio * 100))}%`
+      }, 75)
+    })
+    await feedDone
+    // ⑤ 正在检查登录环境：进度条 0 → 100（这一拍不再配语音，台本已精简到 5 句）
+    const total = 4200
+    const started = performance.now()
+    await new Promise((done) => {
+      const step = () => {
+        const ratio = Math.min(1, (performance.now() - started) / total)
+        bar.style.inset = `0 ${String((1 - ratio) * 100)}% 0 0`
+        pct.textContent = `${String(Math.round(ratio * 100))}%`
+        if (ratio < 1) requestAnimationFrame(step)
+        else done()
+      }
+      step()
+    })
+    // ⑥ 盖章：核验通过（动画自己走，配音跟着起，不等它）
+    pct.textContent = '100% · 核验通过'
+    document.getElementById('stamp').classList.add('on')
+    playLine(4)   // 第 4 句：Verification complete. Identity confirmed.
+    await wait(1100)
+    // ⑦ 只淡出终端与卡片；地球那一列【保留】—— 它要自己移过去，不是重造一颗。
+    //    （之前把 .colG 一起 display:none，槽位 rect 变成 0，终幕就会从左上角拉球出来。）
+    for (const panel of [document.querySelector('.colL'), document.querySelector('.colR')]) {
+      fade(panel, 0, 420)
+    }
+    // 这些文字上挂着 l-line 动画，CSS 动画优先级高于内联 opacity —— 必须用 visibility 才会真的消失
+    for (const el of document.querySelectorAll('.globePos2 > *:not(.ball)')) el.style.visibility = 'hidden'
+    await wait(460)
+    // 用 visibility 而不是 display:none —— 后者会让网格塌掉，地球那一列被挤到最左，
+    // 终幕读到的槽位就会一路左移，看起来像"球从左边冒出来"。
+    document.querySelector('.colL').style.visibility = 'hidden'
+    document.querySelector('.colR').style.visibility = 'hidden'
+    // 此刻终幕接管：它读到的正是这颗地球当前所在的 rect，画的是同一批字符，
+    // 所以视觉上地球没有消失，而是从原地开始移动 + 放大。
+    document.getElementById('globeLayer').style.opacity = '0'
+    startFinale()
+    // 移中(900) → 化字(1500) → 停留(2200) → 粒子散开(1300)，之后才淡出收尾
+    // 第 8 句刻意再晚一点：终幕一开始就念会抢拍，现在等字快成形时才起。
+    window.setTimeout(() => playLine(5), 1000)
+    await wait(FINALE.move + FINALE.form + FINALE.hold + FINALE.scatter)
+    // ⑧ 淡出收尾
+    if (finaleRaf !== null) {
+      cancelAnimationFrame(finaleRaf)
+      finaleRaf = null
+    }
+    burst.classList.remove('on')
+    veil.style.transition = 'opacity 900ms ease'
+    veil.style.opacity = '1'
+    await wait(950)
+    document.dispatchEvent(new CustomEvent('ueg:done'))
+    // 作为插件的启动动画（iframe）运行时，收尾后通知宿主把自己撤掉
+    if (window.parent !== window) {
+      try { window.parent.postMessage('ueg:done', '*') } catch { /* 跨域就不通知 */ }
+    }
+  }
+
+  /* ── 第一个交互点：申请访问许可 ─────────────────────────────────────── */
+  const gateButton = document.getElementById('gateButton')
+  gateButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    startVoice()
+    gateButton.disabled = true
+    // 不再显示"已受理 · 等待核验" —— 直接进入第二幕。
+      gateOpened = true   // 按钮也算「已推进」，否则 3.5 秒后的自动播放会再来一次
+      runAct2()
+  })
+</script>
+</body>
+</html>

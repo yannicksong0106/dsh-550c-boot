@@ -7,3 +7,6 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# 开发期的临时脚本与截图（不参与发布）
+_dev/

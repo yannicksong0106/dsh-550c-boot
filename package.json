@@ -12,6 +12,7 @@
   },
   "files": [
     "lib",
+    "preview",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
@@ -44,14 +45,16 @@
   "keywords": [
     "dsh",
     "dsh-plugin",
-    "deepseek-harness",
-    "cordis",
-    "plugin",
+    "dsh-550c",
+    "550c",
+    "suite",
     "boot-animation",
     "splash",
-    "startup",
-    "theme",
-    "web-ui"
+    "login-animation",
+    "ueg",
+    "开机动画",
+    "启动动画",
+    "登录动画"
   ],
   "engines": {
     "node": ">=20"
@@ -77,6 +80,15 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
+    },
+    "suite": {
+      "id": "dsh-550c",
+      "role": "boot",
+      "title": "550C",
+      "recommends": [
+        "dsh-550c-skin"
+      ],
+      "note": "同一套件的两个插件，可各自独立安装。同时安装时「550C」设置页由本插件提供，皮肤插件只往里加自己的设置行；两者没有任何代码依赖。"
     }
   },
   "dshWorkshop": {
