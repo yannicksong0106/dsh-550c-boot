@@ -1189,7 +1189,7 @@
      会在用户第一次点击页面时自动补播当前那一句 —— 不需要任何确认按钮。
      以后接进插件时，这个开关放进控制面板让用户决定是否关闭配音。 */
   // 相对路径：预览页（/ueg.html）解析成 /voice/，插件页（/ueg/）自动变成 /ueg/voice/
-  const VOICE_DIR = location.protocol === 'file:' ? 'file:///F:/项目/salt/ueg-voice/' : 'voice/'
+  const VOICE_DIR = 'voice/'   // 相对路径；file:// 直接打开时也按同目录解析
   // 默认女声（已定稿）；?voice=male 切男声；?audio=0 静音
   const VOICE_VARIANT = new URLSearchParams(location.search).get('voice') === 'male' ? 'male' : 'female'
   const AUDIO_ON = new URLSearchParams(location.search).get('audio') !== '0'

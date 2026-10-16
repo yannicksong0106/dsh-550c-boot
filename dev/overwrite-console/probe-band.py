@@ -2,7 +2,7 @@
 import sys
 from PIL import Image
 
-path = sys.argv[1] if len(sys.argv) > 1 else r"F:\项目\dsh-start\dev\overwrite-console\shots\t12400.png"
+path = sys.argv[1] if len(sys.argv) > 1 else "shots/t12400.png"   # 相对本目录
 img = Image.open(path).convert("L")
 w, h = img.size
 print(f"{path}\n尺寸 {w}x{h}")

@@ -125,7 +125,7 @@ node .verify/publish-npm.mjs --check    # 只验身份 + dry run
 node .verify/publish-npm.mjs 123456     # 账号要 OTP 时带上 6 位码
 ```
 
-`publish-npm.mjs` 的约定：凭据优先取环境变量 `NPM_TOKEN`，其次 `F:\项目\salt\npm_token.txt`，
+`publish-npm.mjs` 的约定：凭据优先取环境变量 `NPM_TOKEN`，其次本机的一个凭据文件，
 再退到本机已有的 `npm login` 会话；令牌只写进 `%TEMP%` 下的**临时** npmrc、`finally` 里删除、
 **绝不打印**，不进仓库也不进全局 npm 配置。发布后自动 `npm view` 核对版本与 tarball 完整性。
 
