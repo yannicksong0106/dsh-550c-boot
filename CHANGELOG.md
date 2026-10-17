@@ -2,6 +2,18 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号用 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布] - 2026-10-18
+
+### 适配
+
+- **适配 DSH `0.2.0-rc.2`**：在 rc.2 的 profile 里实测通过 —— 插槽体系
+  （`settings.section` / `settings.general.item` / `settings.\u003550c.item`）、
+  `webserver/index-inject`、`webServer.register` 与客户端模块加载器均未变，
+  **插件零代码改动即可运行**（0 报错，设置页与三个分组、版本注入、首帧黑帧全部正常）。
+- `dshWorkshop.compatibility.dshVersions` 增加 `0.2.0-rc.2`；
+  `engines.dsh` 保持 `>=0.2.0-rc.1`（rc.1 仍可用，不额外收紧）。
+- `docs/PUBLISHING.md` 的实测基线补充 rc.2。
+
 ## [0.4.0] - 2026-10-16
 
 ### 界面与设置页改版

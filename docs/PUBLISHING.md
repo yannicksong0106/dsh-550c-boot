@@ -107,7 +107,7 @@ gh repo edit yannicksong0106/dsh-550c-boot \
 |---|---|---|
 | 接入类型 | `method: profile-bundle` + `protocol: harness-profile` | 850/896 个目录项都走这条，公开契约可用 |
 | install adapter | **必须是 `profile-bundle`** | 官方校验器 `scripts/workshop-manifest-lib.mjs` 有一条 schema 看不出的跨字段规则：`BUILTIN_PROTOCOL_ADAPTERS['harness-profile'] = ['profile-bundle']`。写成 `harness-profile` 会被判 `install adapter does not match the integration protocol` —— 这条就是离线 schema 校验抓不到的坑 |
-| 基线 | 我们只在 `@deepseek-ai/dsh@0.2.0-rc.1` 上实测过；Hub 公布的基线是 `0.1.0-rc.6` | 清单里只声明实测版本，**不猜**；若审核要求基线复验，就在临时 profile 里装 RC.6 重跑 `scripts/verify.mjs` |
+| 基线 | 我们已在 `@deepseek-ai/dsh@0.2.0-rc.1` 与 `0.2.0-rc.2` 上实测过；Hub 公布的基线是 `0.1.0-rc.6` | 清单里只声明实测版本，**不猜**；若审核要求基线复验，就在临时 profile 里装 RC.6 重跑 `scripts/verify.mjs` |
 | 能力断言 | `capability.id = boot-splash`（`kind: ui`） | 断言里写的是可执行的观察方式（挂载点 + 首帧类名），不是"加载成功" |
 | 证据路径 | 四项都是 `null`（未声明） | 宁缺毋滥：声明了就要有对应证据文件；等 RC.6 生命周期跑完再补 |
 | 权限 | `web:index-inject` / `dom:overlay` / `browser:local-storage` / `desktop:titlebar-overlay` | 逐条对应真实行为：注入 index 行、挂遮罩、存偏好、改标题栏 token |
