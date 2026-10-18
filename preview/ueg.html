@@ -595,7 +595,7 @@
           <div class="idPhoto2" id="idPhoto"><span>PHOTO</span></div>
           <div class="idMain">
             <div class="name" id="idName">—</div>
-            <div class="en">LIU PEIQIANG · 联合政府 航天员大队</div>
+            <div class="en" id="idEn"></div>
             <div class="fields">
               <div><span>证件编号</span><b id="idSerial">—</b></div>
               <div><span>签发机构</span><b id="idIssuer">UEG 联合政府 · 身份管理局</b></div>
@@ -979,9 +979,10 @@
   let finaleStart = 0
   let finaleRaf = null
   let finaleOrigin = null      // 终幕开始时冻结的"地球此刻的屏幕位置"
+  let board = null             // 量字用的离屏画布：buildTextTargets 里建，resize 时要跟着改尺寸
 
   function buildTextTargets() {
-    const board = document.createElement('canvas')
+    board = document.createElement('canvas')
     board.width = Math.round(window.innerWidth)
     board.height = Math.round(window.innerHeight)
     const bctx2 = board.getContext('2d')
@@ -1242,7 +1243,7 @@
   // 空格：第一幕时等于按下「申请访问许可」，之后各幕则跳到结尾；Esc：随时收尾退场。
   // 这个动画有交互，所以没做点击跳过 —— 键盘跳过是更合适的出口。
   let gateOpened = false
-let act2Started = false   // 第二幕只能开一次：按钮、自动播放、空格三条路都从这里过
+  let act2Started = false   // 第二幕只能开一次：按钮、自动播放、空格三条路都从这里过
   let skipped = false
   // 启动时会先从普通窗口切到全屏：窗口尺寸一变，画布的【属性尺寸】就和 CSS 的
   // 100vw/100vh 对不上了，坐标被拉伸 —— 看起来就是初始凝聚点偏右。
@@ -1252,8 +1253,11 @@ let act2Started = false   // 第二幕只能开一次：按钮、自动播放、
     const h = Math.round(window.innerHeight)
     burst.width = w
     burst.height = h
-    board.width = w
-    board.height = h
+    // 终幕的量字画布可能还是 null（还没跑到第三幕），直接写会抛错。
+    if (board !== null) {
+      board.width = w
+      board.height = h
+    }
     if (finaleOrigin !== null) finaleOrigin.cx = Math.round(w / 2)
   })
 
@@ -1324,7 +1328,15 @@ let act2Started = false   // 第二幕只能开一次：按钮、自动播放、
     const params = new URLSearchParams(location.search)
     // 预览控制条只在 ?debug=1 出现；正片里不留
     if (params.has('debug')) document.body.classList.add('debug')
-    document.getElementById('idName').textContent = params.get('name') ?? '刘培强'
+    // 姓名下面那行（拼音 · 职务/单位）也 DIY：两个字段都从设置里带进来。
+    // 都没填就只显示姓名本身 —— 不再写死某个默认人物的拼音与编制。
+    const nameText = params.get('name') ?? '刘培强'
+    document.getElementById('idName').textContent = nameText
+    const enText = params.get('en') ?? ''
+    const postText = params.get('post') ?? ''
+    // 只有填了拼音或职务才出现这一行：都不填时留空，不重复姓名，也不冒出默认人物的信息。
+    const subLine = [enText, postText].filter((part) => part !== '').join(' · ')
+    document.getElementById('idEn').textContent = subLine
     const photo = params.get('photo')
     // 头像：填纯文件名就当作 assets/ 里的图（如 me.png → assets/me.png，
     // 预览页解析成 /assets/me.png、插件页解析成 /ueg/assets/me.png，两边都能取到）

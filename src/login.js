@@ -49,6 +49,8 @@ const LOGIN_AUTOPLAYS = [
 const LOGIN_PHOTO_KEY = 'dsh-550c-boot:login-photo'
 /* 身份卡上还能 DIY 的字段：[参数名, 标签, 默认值] */
 const LOGIN_CARD_KEYS = [
+  ['en', '英文名（拼音）', ''],
+  ['post', '职务 / 所属单位', ''],
   ['level', '授权等级', 'LEVEL 3 · 生活区通行'],
   ['issuer', '签发机构', 'UEG 联合政府 · 身份管理局'],
   ['valid', '有效期', '本次会话 · 随登出失效'],
@@ -266,6 +268,22 @@ function LoginRow() {
           setUser(event.target.value)
           writeLoginPref(LOGIN_USER_KEY, event.target.value)
         },
+      }),
+      // 姓名下面那行（拼音 · 职务/单位）：填了就替换，留空只显示姓名本身。
+      // 注意：src/*.js 会被 build.mjs 拼进模板字符串，注释里不能有美元花括号插值。
+      React.createElement('input', {
+        className: 'dsh550c-input',
+        type: 'text',
+        placeholder: '英文名 / 拼音（如 ZHANG SAN，留空显示姓名本身）',
+        defaultValue: readLoginPref(LOGIN_CARD_KEY('en'), ''),
+        onChange: (event) => writeLoginPref(LOGIN_CARD_KEY('en'), event.target.value),
+      }),
+      React.createElement('input', {
+        className: 'dsh550c-input',
+        type: 'text',
+        placeholder: '职务 / 所属单位（如 联合政府 后勤保障局）',
+        defaultValue: readLoginPref(LOGIN_CARD_KEY('post'), ''),
+        onChange: (event) => writeLoginPref(LOGIN_CARD_KEY('post'), event.target.value),
       }),
       // 头像：直接在设置里选本机图片。图片先缩到 256px 再存成 data URL ——
       // 这样 localStorage 装得下、也不必把一长串 base64 塞进 iframe 的 query。
