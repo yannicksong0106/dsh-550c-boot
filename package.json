@@ -1,6 +1,6 @@
 {
   "name": "dsh-550c-boot",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "550C 开机动画 + 登录授权界面：启动时播放 550C 片头，之后可走一段可交互的访问授权（UEG 联合政府 / 550C 控制终端两套主题），点击或 Enter 推进、Esc 跳过；通用设置里可切换或关闭。",
   "type": "module",
   "main": "./lib/index.js",

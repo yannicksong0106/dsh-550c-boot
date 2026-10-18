@@ -58,6 +58,12 @@ function mountLoginGate(force) {
     inner.src = '/ueg/' + (params.size === 0 ? '' : '?' + params.toString())   // 同上
     // 动画页画出来之后再撤退宿主的首帧黑帧 —— 这样从开机到 UEG 第一帧没有空档。
     inner.addEventListener('load', () => {
+      // 头像主动推一次：桌面端 iframe 读不到 localStorage（主窗口被宿主代理接管了），
+      // 只能由父页递进去；iframe 自己也会发 ueg:need-photo 来要，两条路都通。
+      try {
+        const photoNow = readLoginPref(LOGIN_PHOTO_KEY, '')
+        if (photoNow !== '') inner.contentWindow.postMessage({ type: 'ueg:photo', photo: photoNow }, '*')
+      } catch { /* 窗口还没就绪，等它来要 */ }
       try {
         if (typeof endFirstFrame === 'function') endFirstFrame()
       } catch (error) {
@@ -81,7 +87,18 @@ function mountLoginGate(force) {
       // 动画就从头重播。保留记录 = 已放完，后续钩子一律早退。
     }
     const onMessage = (event) => {
-      if (event.data === 'ueg:done' && event.source === inner.contentWindow) dismiss()
+      if (event.source !== inner.contentWindow) return
+      if (event.data === 'ueg:done') { dismiss(); return }
+      // 桌面端（DSH Desktop）把主窗口的 localStorage 换成了宿主存储代理，
+      // iframe 是独立 realm，拿不到那层覆写 —— 读原生存储是空的，头像就永远是占位符。
+      // 所以头像既不塞 URL（base64 会撞 431），也不指望 localStorage，改由这里递进去。
+      if (event.data === 'ueg:need-photo') {
+        let photo = ''
+        try { photo = readLoginPref(LOGIN_PHOTO_KEY, '') } catch { photo = '' }
+        if (photo !== '') {
+          try { inner.contentWindow.postMessage({ type: 'ueg:photo', photo: photo }, '*') } catch { /* 窗口已关闭 */ }
+        }
+      }
     }
     const record = { dispose: dismiss, dismiss }
     window.addEventListener('message', onMessage)

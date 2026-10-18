@@ -2,25 +2,35 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号用 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布] - 2026-10-18
+## [0.4.1] - 2026-10-18
 
 ### 修复
 
-- **身份卡「姓名下面那行」不再写死**：`preview/ueg.html` 里那行
-  `LIU PEIQIANG · 联合政府 航天员大队` 原本是硬编码的纯文本，DIY 姓名完全改不动它。
-  现在这行有自己的 id，并新增两个设置项 **英文名 / 拼音** 与 **职务 / 所属单位**：
-  填了就显示「拼音 · 职务」，留空则只显示姓名本身 —— 不会再冒出默认人物的姓名与编制。
+- **桌面端（DSH Desktop）身份卡头像不显示**（#6）：桌面客户端把顶层文档的 `localStorage`
+  换成了宿主存储代理，而 `/ueg/` 的 iframe 是独立 realm，拿不到那层覆写 —— `getItem` 返回空，
+  照片框永远停在 `PHOTO` 占位符。现在由父页用 `postMessage` 把头像递进 iframe
+  （不塞进 URL，所以也不会撞 base64 引发的 431），浏览器里的 `localStorage` 老路径保留。
+- **第一次点开「UEG 登录界面」时整行没有样式**：设置行的样式表原本只在 `src/rows.js`
+  的行组件里按需注入，而 UEG 这一行由 `src/login.js` 渲染、从不触发注入。于是首次进入该 tab 时，
+  输入框退回浏览器默认外观（`<input>` 是 inline-block，按容器宽度自动流排），看起来像挤成三列，
+  描述文字没有行距、胶囊没有分组、文件框顶破右边。现在在设置页壳 `Panel550c` 开头注入 ——
+  先点哪个 tab，第一帧就有样式。
+- **身份卡「姓名下面那行」不再写死**：`LIU PEIQIANG · 联合政府 航天员大队` 原本是硬编码纯文本，
+  DIY 姓名完全改不动它。现在这行有单独的 id，并新增两个设置项 **英文名 / 拼音** 与
+  **职务 / 所属单位**：填了就显示「拼音 · 职务」，只填一个就显示那一个，都不填则留空。
+- **卡片字段改成两列网格**：`repeat(2, minmax(0, 1fr))`，宽容器下不再排成三列把占位文字截断；
+  占位文字也相应缩短。
+- **面板容器补 `width:100%; min-width:0`**：不再被内容撑开，随容器宽度重排。
 
 ### 适配
 
 - **适配 DSH `0.2.0-rc.2`**：在 rc.2 的 profile 里实测通过 —— 插槽体系
-  （`settings.section` / `settings.general.item` / `settings.\u003550c.item`）、
+  （`settings.section` / `settings.general.item` / `settings.550c.item`）、
   `webserver/index-inject`、`webServer.register` 与客户端模块加载器均未变，
   **插件零代码改动即可运行**（0 报错，设置页与三个分组、版本注入、首帧黑帧全部正常）。
 - `dshWorkshop.compatibility.dshVersions` 增加 `0.2.0-rc.2`；
   `engines.dsh` 保持 `>=0.2.0-rc.1`（rc.1 仍可用，不额外收紧）。
 - `docs/PUBLISHING.md` 的实测基线补充 rc.2。
-
 ## [0.4.0] - 2026-10-16
 
 ### 界面与设置页改版

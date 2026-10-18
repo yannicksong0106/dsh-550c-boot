@@ -207,7 +207,7 @@ function LoginRow() {
     ),
     React.createElement(
       'div',
-      { className: 'dsh550c-row-ctrl', style: { display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'flex-start', rowGap: '12px', maxWidth: '780px' } },
+      { className: 'dsh550c-row-ctrl', style: { display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'flex-start', width: '100%', rowGap: '12px', maxWidth: '780px' } },
       React.createElement(
         'div',
         { className: 'dsh550c-seg' },
@@ -259,6 +259,11 @@ function LoginRow() {
           ),
         ),
       ),
+      // 卡片字段排成两列网格：不受"内容撑宽"影响，容器变宽变窄都会重排，
+      // 不会出现"第一次点进来挤成三列、再点一次才正常"那种首帧卡住的状态。
+      React.createElement(
+        'div',
+        { className: 'dsh550c-card-fields' },
       React.createElement('input', {
         className: 'dsh550c-input',
         type: 'text',
@@ -274,14 +279,14 @@ function LoginRow() {
       React.createElement('input', {
         className: 'dsh550c-input',
         type: 'text',
-        placeholder: '英文名 / 拼音（如 ZHANG SAN，留空显示姓名本身）',
+        placeholder: '英文名 / 拼音',
         defaultValue: readLoginPref(LOGIN_CARD_KEY('en'), ''),
         onChange: (event) => writeLoginPref(LOGIN_CARD_KEY('en'), event.target.value),
       }),
       React.createElement('input', {
         className: 'dsh550c-input',
         type: 'text',
-        placeholder: '职务 / 所属单位（如 联合政府 后勤保障局）',
+        placeholder: '职务 / 所属单位',
         defaultValue: readLoginPref(LOGIN_CARD_KEY('post'), ''),
         onChange: (event) => writeLoginPref(LOGIN_CARD_KEY('post'), event.target.value),
       }),
@@ -363,6 +368,7 @@ function LoginRow() {
         'button',
         { type: 'button', className: 'dsh550c-preview', onClick: () => mountLoginGate(screen === 'off' ? 'ueg' : screen) },
         '预览',
+      ),
       ),
     ),
   )

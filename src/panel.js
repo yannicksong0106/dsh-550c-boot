@@ -29,11 +29,16 @@ const PANEL_SLOTS = {
 
 /** 页壳：顶部是灵动岛式胶囊筛选条（吸顶），下面是框住内容的卡片。 */
 function Panel550c(props) {
+  // 设置行的整套样式（.dsh550c-row / -input / -seg / -preview …）必须在这里注入：
+  // 以前只有 rows.js 的行组件会调 ensureRowStyle，于是"第一次点 UEG"时那套 CSS 还没进页面，
+  // 整行退回浏览器默认样式 —— 输入框是 inline-block，按宽度自动流排，看起来就像挤成三列。
+  // 放到页壳上：进 550C 页的第一帧就有样式，先点哪个 tab 都一样。
+  ensureRowStyle()
   const [tab, setTab] = React.useState('look')
   const active = PANEL_TABS.find((item) => item.id === tab) ?? PANEL_TABS[0]
   return React.createElement(
     'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: '18px', paddingBottom: '8px' } },
+    { className: 'dsh550c-panel-frame', style: { display: 'flex', flexDirection: 'column', gap: '18px', paddingBottom: '8px' } },
     React.createElement(
       'div',
       {
@@ -82,6 +87,7 @@ function Panel550c(props) {
     React.createElement(
       'div',
       {
+        className: 'dsh550c-panel-card',
         style: {
           borderRadius: '18px',
           border: '1px solid color-mix(in srgb, currentColor 14%, transparent)',

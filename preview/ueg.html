@@ -1348,6 +1348,17 @@
       if (photoValue === '') photoValue = null
     }
     if (photoValue !== null) document.getElementById('idPhoto').style.backgroundImage = `url("${photoValue}")`
+    /* 桌面端（DSH Desktop）把主窗口的 localStorage 换成了宿主存储代理，
+       iframe 是独立 realm，拿不到那层覆写 —— 读原生存储是空的，头像就永远是占位符。
+       所以这里向父页要一次，由父页 postMessage 递进来（不走 URL，避免 base64 撞 431）。 */
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent) return
+      const data = event.data
+      if (!data || data.type !== 'ueg:photo') return
+      if (typeof data.photo !== 'string' || data.photo === '') return
+      document.getElementById("idPhoto").style.backgroundImage = 'url("' + data.photo + '")'
+    })
+    try { window.parent.postMessage('ueg:need-photo', '*') } catch { /* 独立打开，没有父页 */ }
     const serial = params.get('id') ?? `UEG-550C-${Math.random().toString(16).slice(2, 10).toUpperCase()}`
     document.getElementById('idSerial').textContent = serial
     // 卡片上其余字段也可以 DIY：设置里填了就覆盖，留空就用默认

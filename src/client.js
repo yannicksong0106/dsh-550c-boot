@@ -131,6 +131,26 @@ const ROW_CSS = `
 .dsh550c-note.bad{color:var(--dsw-alias-label-error,#d4380d)}
 .dsh550c-link{border:0;background:transparent;padding:0;margin:0 0 0 8px;font-family:inherit;font-size:12px;color:var(--dsw-alias-brand-primary,#4d6bfe);cursor:pointer;text-decoration:underline}
 .dsh550c-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14));border-radius:6px;padding:2px 6px}
+/* 面板不能被内容撑开：首次挂载时容器宽度可能还没定下来，
+   若让内容自己决定宽度，就会停在"3 个输入挤一行并溢出"的状态，
+   直到重新挂载才回缩。这里显式占满容器并允许收缩。 */
+.dsh550c-panel-frame{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+/* 卡片字段固定两列：auto-fit 会让它在宽容器里变成三列，占位文字全被截断。
+   满两列时每格约 300-400px，读起来才正常。 */
+.dsh550c-card-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  align-items:center;width:100%;min-width:0;box-sizing:border-box}
+.dsh550c-card-fields .dsh550c-input{width:100%;min-width:0;max-width:100%;box-sizing:border-box;flex:none}
+.dsh550c-card-fields .dsh550c-preview{justify-self:start}
+/* 文件选择框与头像也要服从网格：否则文件框按自身内容撑开，会顶破列宽。 */
+.dsh550c-card-fields input[type=file]{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.dsh550c-card-fields img{justify-self:start;width:32px;height:32px;object-fit:cover;border-radius:3px;border:1px solid rgba(255,255,255,.3)}
+/* 窄容器（手机/窄窗）退回单列，避免两列各 130px 挤成一团。 */
+@media (max-width: 620px){.dsh550c-card-fields{grid-template-columns:minmax(0,1fr)}}
+.dsh550c-panel-card{width:100%;min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden}
+.dsh550c-row{min-width:0;max-width:100%}
+.dsh550c-row-text{min-width:0}
+.dsh550c-row-ctrl{min-width:0;max-width:100%;flex-wrap:wrap}
+.dsh550c-input{min-width:0;max-width:100%;box-sizing:border-box;flex:1 1 190px}
 `
 
 function ensureRowStyle() {
