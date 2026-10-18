@@ -26,7 +26,11 @@ const root = resolve(here, '..')
 const PLUGIN_ID = 'dsh-550c-boot'
 const PARTS = ['src/assets.js', 'src/show.js', 'src/enhance.js', 'src/panel.js', 'src/login-css.js', 'src/login-gate.js', 'src/login-themes.js', 'src/login.js', 'src/rows.js', 'src/client.js']
 
-const read = (file) => readFileSync(resolve(root, file), 'utf8')
+// 行尾必须先归一化：Windows 检出是 CRLF，空行读出来是 "\r"（长度 1），
+// 会被下面的缩进逻辑当成非空行补上 \t\t；Linux 检出是 LF，空行是 ""（长度 0），不补。
+// 不归一化的话同一份源码在两个平台会构建出不同的 bundle，
+// CI 那条 `git diff --exit-code -- lib/client.js` 就必然失败。
+const read = (file) => readFileSync(resolve(root, file), 'utf8').replace(/\r\n/g, '\n')
 const body = PARTS.map((file) => `//#region ${file}\n${read(file).trimEnd()}\n//#endregion`).join('\n\n')
 
 const out = `window.__ModuleLoader__.load({
