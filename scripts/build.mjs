@@ -24,7 +24,10 @@ import { Script } from 'node:vm'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const PLUGIN_ID = 'dsh-550c-boot'
-const PARTS = ['src/assets.js', 'src/show.js', 'src/enhance.js', 'src/panel.js', 'src/login-css.js', 'src/login-gate.js', 'src/login-themes.js', 'src/login.js', 'src/rows.js', 'src/client.js']
+// src/music.js 排在 panel.js 之后、login-css.js 之前：它要在 client.js 之前
+// 定义好开机音乐的存储与播放接口（client.js 在模块求值末尾就挂载片头并开播音乐），
+// 又不能早于它去引用 client.js 里的顶层 const。
+const PARTS = ['src/assets.js', 'src/show.js', 'src/enhance.js', 'src/panel.js', 'src/music.js', 'src/login-css.js', 'src/login-gate.js', 'src/login-themes.js', 'src/login.js', 'src/rows.js', 'src/client.js']
 
 // 行尾必须先归一化：Windows 检出是 CRLF，空行读出来是 "\r"（长度 1），
 // 会被下面的缩进逻辑当成非空行补上 \t\t；Linux 检出是 LF，空行是 ""（长度 0），不补。

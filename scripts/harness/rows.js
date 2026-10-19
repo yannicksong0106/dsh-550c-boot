@@ -144,6 +144,11 @@
       var login = renderer(rows['boot-550c-login'])
       report.login = describe(login.draw())
       delete report.login._checkButton
+      // 开机音乐是一整块组件（曲库列表要纵向空间），所以它不像别的行那样
+      // 只有一段标题加一行按钮：开关、导入按钮、音量与淡出滑杆、曲库都在同一块里。
+      var music = renderer(rows['boot-550c-music'])
+      report.music = describe(music.draw())
+      delete report.music._checkButton
       var version = renderer(rows['boot-550c-update'])
       report.versionIdle = describe(version.draw())
       delete report.versionIdle._checkButton
