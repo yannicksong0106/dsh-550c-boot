@@ -63,6 +63,11 @@ function mountLoginGate(force) {
       try {
         const photoNow = readLoginPref(LOGIN_PHOTO_KEY, '')
         if (photoNow !== '') inner.contentWindow.postMessage({ type: 'ueg:photo', photo: photoNow }, '*')
+
+// 二维码同理：动画页自己会读 localStorage，但桌面端 iframe 读不到代理层，
+// 所以父页主动递一次；动画页发 ueg:need-qr 时再补一次。
+const qrNow = readLoginPref('dsh-550c-boot:login-qr', '')
+if (qrNow !== '') inner.contentWindow.postMessage({ type: 'ueg:qr', qr: qrNow }, '*')
       } catch { /* 窗口还没就绪，等它来要 */ }
       try {
         if (typeof endFirstFrame === 'function') endFirstFrame()
@@ -92,7 +97,13 @@ function mountLoginGate(force) {
       // 桌面端（DSH Desktop）把主窗口的 localStorage 换成了宿主存储代理，
       // iframe 是独立 realm，拿不到那层覆写 —— 读原生存储是空的，头像就永远是占位符。
       // 所以头像既不塞 URL（base64 会撞 431），也不指望 localStorage，改由这里递进去。
-      if (event.data === 'ueg:need-photo') {
+      if (event.data === 'ueg:need-qr') {
+  let qrPayload = ''
+  try { qrPayload = readLoginPref('dsh-550c-boot:login-qr', '') } catch { qrPayload = '' }
+  try { inner.contentWindow.postMessage({ type: 'ueg:qr', qr: qrPayload }, '*') } catch { /* 窗口已关闭 */ }
+  return
+}
+if (event.data === 'ueg:need-photo') {
         let photo = ''
         try { photo = readLoginPref(LOGIN_PHOTO_KEY, '') } catch { photo = '' }
         if (photo !== '') {

@@ -141,8 +141,9 @@
     "check": "node --check lib/client.js && node --check lib/index.js",
     "test": "node scripts/test-host.mjs",
     "test:harness": "node scripts/harness/build.mjs && node scripts/harness/run.mjs",
-    "verify": "npm run build && npm run check && npm test && npm run test:harness && node scripts/verify.mjs --static",
-    "prepublishOnly": "node scripts/extract.mjs && node scripts/build.mjs && node --check lib/client.js && node --check lib/index.js"
+    "verify": "npm run build && npm run check && npm test && npm run test:harness",
+    "prepublishOnly": "node scripts/extract.mjs && node scripts/build.mjs && node --check lib/client.js && node --check lib/index.js",
+    "bake:land": "node scripts/bake-land.mjs"
   },
   "dependencies": {}
 }

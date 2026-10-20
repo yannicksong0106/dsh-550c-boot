@@ -455,6 +455,8 @@
   .stage.play .qr{animation:l-line 380ms ease-out 1.9s both}
   .qr i{width:4px;height:4px;display:block;background:transparent}
   .qr i.on{background:#eef3f8}
+  .qr{width:146px;height:146px;padding:0;box-sizing:border-box}
+  .qrCanvas{display:block;width:146px;height:146px}
   .idcard2 .idHead2{padding-bottom:12px}
 
 
@@ -1378,9 +1380,55 @@
       item.style.animationDelay = `${String(-i * 0.045)}s`   // 错开相位，条纹像在流动
       bars.appendChild(item)
     }
-    /* 二维码：由证件编号决定的点阵（同一张卡永远一样），带三个定位角 */
+    /* 自定义二维码：设置里把内容编码成位矩阵存下来（"模块数:base64 位"），
+     这里按卡片风格重画 —— 浅色底板 + 深色点阵模块（gap 1px），
+     但三个定位角和两条时序线必须实心，否则解不出来（实测）。
+     没设置过就返回 false，走下面原来的装饰点阵。 */
+  const qrBox = document.getElementById("idQr")
+  function drawCustomQr(payload) {
+    const match = /^(\d+):([A-Za-z0-9+/=]+)$/.exec(payload || "")
+    if (!match) return false
+    const count = Number(match[1])
+    if (!(count >= 21 && count <= 57)) return false
+    let bits = ""
+    try { bits = atob(match[2]) } catch { return false }
+    if (bits.length * 8 < count * count) return false
+    const size = 146
+    const quiet = 6
+    const cell = Math.floor((size - quiet * 2) / count)
+    const origin = Math.round((size - cell * count) / 2)
+    const canvas = document.createElement("canvas")
+    canvas.width = size
+    canvas.height = size
+    canvas.className = "qrCanvas"
+    const context = canvas.getContext("2d")
+    context.fillStyle = "#0b0d12"
+    context.fillRect(0, 0, size, size)
+    context.fillStyle = "#eef3f8"
+    const isSolid = (x, y) => (x < 7 && y < 7) || (x >= count - 7 && y < 7) || (x < 7 && y >= count - 7) || x === 6 || y === 6
+    for (let y = 0; y < count; y += 1) {
+      for (let x = 0; x < count; x += 1) {
+        const index = y * count + x
+        if (((bits.charCodeAt(index >> 3) >> (7 - (index & 7))) & 1) !== 1) continue
+        const gap = isSolid(x, y) ? 0 : 1
+        context.fillRect(origin + x * cell + (gap ? 0.5 : 0), origin + y * cell + (gap ? 0.5 : 0), cell - gap, cell - gap)
+      }
+    }
+    qrBox.textContent = ""
+    qrBox.style.padding = "0"
+    qrBox.style.gap = "0"
+    qrBox.appendChild(canvas)
+    return true
+  }
+  function readQrPayload() {
+    const fromQuery = new URLSearchParams(location.search).get("qr")
+    if (fromQuery) return fromQuery
+    try { return window.localStorage.getItem("dsh-550c-boot:login-qr") } catch { return null }
+  }
+  const qrCustom = drawCustomQr(readQrPayload())
+  /* 二维码：由证件编号决定的点阵（同一张卡永远一样），带三个定位角 */
     const qr = document.getElementById('idQr')
-    qr.style.gridTemplateColumns = 'repeat(21, 4px)'
+    if (qrCustom === false) qr.style.gridTemplateColumns = 'repeat(21, 4px)'
     let seed = 0
     for (const char of serial) seed = (seed * 31 + char.charCodeAt(0)) % 100000
     const rnd = () => {
@@ -1395,7 +1443,7 @@
       return dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4)
     }
     for (let y = 0; y < 21; y += 1) {
-      for (let x = 0; x < 21; x += 1) {
+      for (let x = 0; qrCustom === false && x < 21; x += 1) {
         const cell = document.createElement('i')
         const fixed = finder(x, y)
         if (fixed === true || (fixed === null && rnd() > 0.55)) cell.className = 'on'
