@@ -32,3 +32,5 @@ jobs:
         run: git diff --exit-code -- lib/client.js
       - name: Browser suite (15 cases / 54 assertions; skips without a browser)
         run: npm run test:harness
+      - name: Static assertions (magic-number table, size caps, fade wiring)
+        run: node scripts/verify.mjs --static

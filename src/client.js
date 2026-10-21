@@ -119,7 +119,10 @@ const ROW_CSS = `
 .dsh550c-seg button{border:0;background:transparent;color:var(--dsw-alias-label-secondary,#666);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;cursor:pointer}
 .dsh550c-seg button+button{border-left:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35))}
 .dsh550c-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
-.dsh550c-seg button.on{background:var(--dsw-alias-brand-primary,#4d6bfe);color:#fff}
+/* 选中态的文字必须用 brand-text，不能写死白色：
+   DSH 的 brand-primary 是随主题翻面的（浅色近黑、深色近白），
+   写死 color:#fff 在暗色主题下就成了白底白字，整个分段控件的文字看不见。 */
+.dsh550c-seg button.on{background:var(--dsw-alias-brand-primary,#4d6bfe);color:var(--dsw-alias-brand-text,#fff)}
 .dsh550c-preview{border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));background:transparent;color:var(--dsw-alias-label-primary,#191919);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;border-radius:8px;cursor:pointer}
 .dsh550c-preview:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 .dsh550c-preview[disabled]{opacity:.55;cursor:default}
@@ -439,6 +442,10 @@ function mountOverlay(force) {
       window.clearTimeout(record.watchdog)
       record.watchdog = null
     }
+    // 片头结束 = 音乐淡出的起点。渐弱比片头自己的 620ms 长，
+    // 免得音乐在画面消失的那一刻硬切（硬切会爆音）。
+    // 这条路径是片头唯一的收口 —— 播完、Esc 跳过、点击跳过、看门狗兜底都汇到这儿。
+    fadeOutBootMusic()
     host.classList.add('dsh550c-out')
     record.fadeTimer = window.setTimeout(dispose, FADE_MS + 40)
   }
@@ -473,19 +480,23 @@ function mountOverlay(force) {
     // built-in default and the strip keeps the wrong colour for the whole splash.
     record.caption = adaptCaption(host)
 
-    record.show = createShow(stage, { mode: mode, cancelled: CANCELLED })
-    host.addEventListener('click', skip)
-    window.addEventListener('keydown', onKey, true)
-    record.show.start().then(finish, finish)
-    // Last statement of the same task that put the overlay on screen: the host
-    // half's first frame and this shadow root swap inside one paint.
     // UEG 档例外：片头马上会被摘掉，而 UEG 的 iframe 还没挂上 ——
     // 这里撤退黑帧的话，中间那一段会露出 DSH 的原生加载卡（实测就是这个问题）。
     // 改由 UEG iframe 的 load 事件撤退；万一 UEG 没挂上，宿主侧 12 秒兜底会自动撤。
+    // 开机音乐同样归 UEG 让位：UEG 自带男声配音，两个一起响会撞。
     let uegOwnsFirstFrame = false
     try {
       uegOwnsFirstFrame = typeof readLoginScreen === 'function' && readLoginScreen() === 'ueg'
     } catch { uegOwnsFirstFrame = false }
+
+    record.show = createShow(stage, { mode: mode, cancelled: CANCELLED })
+    host.addEventListener('click', skip)
+    window.addEventListener('keydown', onKey, true)
+    // 开机音乐：只配 550C 片头，UEG 档不配（见上面）。
+    startBootMusic()
+    record.show.start().then(finish, finish)
+    // Last statement of the same task that put the overlay on screen: the host
+    // half's first frame and this shadow root swap inside one paint.
     if (!uegOwnsFirstFrame) endFirstFrame()
   } catch (error) {
     console.error('[dsh-550c-boot] show failed to start', error)
@@ -538,6 +549,10 @@ function apply(ctx) {
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-scheme', order: 27 }, SchemeRow),
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-update', order: 28 }, VersionRow),
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-login', order: 29 }, LoginRow),
+      // 通用页是共享账本，别去动别人的号：开机音乐整个追加到末尾。
+      // 550C 页上它是 70（挨着片头那两行），通用页上只能排最后 ——
+      // 这个页只有在 550C 页不存在时才会出现，是兜底，不是主场。
+      ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c-music', order: 30 }, MusicRow),
     ]
     inGeneral = () => {
       for (const dispose of placed) dispose()
@@ -551,13 +566,16 @@ function apply(ctx) {
    * — 配色 10, 气氛 20, 仪表盘 30, 控制台外观 40 — so copying this plugin's old
    * 26/27/28 across would have recreated the exact collision it was written to
    * fix, one page over. The convention for the series is tens: the skin owns
-   * 10..40, this plugin takes 50..70, and a later plugin slots into the gaps.
+   * 10..40, this plugin takes 50..80, and a later plugin slots into the gaps.
+   * 开机音乐挨着开机动画和配色（都是片头的事），版本与更新挪到 80 收尾 ——
+   * 它是"关于这个插件"的信息，不该插在片头设置中间。
    */
   const placeOnSeries = () => {
     const placed = [
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c', order: 50 }, SettingsRow),
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-scheme', order: 60 }, SchemeRow),
-      ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-update', order: 70 }, VersionRow),
+      ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-music', order: 70 }, MusicRow),
+      ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-update', order: 80 }, VersionRow),
       ctx.slots.register({ name: 'settings.550c.anim.ueg', id: 'boot-550c-login', order: 80 }, LoginRow),
     ]
     onSeries = () => {
@@ -644,6 +662,8 @@ function apply(ctx) {
       liveLogin?.dispose()
       if (bootSplash !== null) bootSplash.dispose()
       if (liveOverlay !== null) liveOverlay.dispose()
+      // 插件被关掉时音乐必须立刻停：那 1.5 秒的淡出是留给片头正常收尾的。
+      stopBgm()
     },
     'dsh-550c-boot: splash teardown',
   )
