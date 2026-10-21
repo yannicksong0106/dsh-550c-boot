@@ -108,3 +108,14 @@ npm i dsh-550c-boot
 MIT © [Ziyang Song](https://github.com/yannicksong0106)
 
 550C 片头动画与 HTML 原稿由 **[Voidpocket](https://github.com/Voidpocket)** 提供；插件工程、移植与 UEG 界面由 **Ziyang Song** 完成。详见 [CREDITS.md](CREDITS.md)。
+
+## 贡献者
+
+| 贡献者 | 分工 |
+|---|---|
+| **[Ziyang Song](https://github.com/yannicksong0106)** | 项目发起与维护：插件工程与移植、UEG 登录界面、设置页、身份卡二维码（本地编码与识别）、地球陆地点云重烘、核验结论状态条、发布与文档 |
+| **[Voidpocket](https://github.com/Voidpocket)** | 550C 片头动画与 HTML 原稿。本项目在这份原稿上做定点移植，配色、面板布局与时间线节奏都出自其手 |
+| **[Eileenes](https://github.com/Eileenes)**（提交署名 Duke） | 开机音乐：曲库导入 / 试听 / 重命名 / 删除 / 指定曲目，音量与淡出时长，以及片头结束时的淡出衔接 |
+| **[沈宏宏](https://github.com/6shenhonghong9)** | 登录授权阶段的交互思路启发：分步推进、由语音时长驱动节奏、首次点击门 |
+
+想参与的话，issue、PR、把用法写清楚，都算贡献。
