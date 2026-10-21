@@ -365,6 +365,12 @@ function adaptCaption(host) {
  * @returns the live overlay record, or null when nothing was mounted
  */
 function mountOverlay(force) {
+  // 非 force（自动播放）时每个文档只放一次：
+  // 思考/流式输出期间客户端会重渲染，原来每次都会把片头重新拉起来 ✗
+  if (force !== true) {
+    if (window.__dsh550cSplashPlayed === true) return null
+    window.__dsh550cSplashPlayed = true
+  }
   if (liveOverlay !== null) return liveOverlay
 
   const stored = readMode()
@@ -512,6 +518,14 @@ function mountOverlay(force) {
 }
 
 function apply(ctx) {
+  // 客户端重连 / 热重挂载会再次调用 apply：
+  // 重复 register 同一个 slot id 会抛错，抛错之后 550C 面板就注册不上了
+  // —— 表现就是"设置里 550C 那个按键不见了，只能重启找回来" ✗
+  if (window.__dsh550cApplied === true) {
+    console.info('[dsh-550c-boot] apply 已执行过，跳过重复注册')
+    return
+  }
+  window.__dsh550cApplied = true
   // The settings rows are ordinary slot contributions: they belong to a panel
   // and should live and die with it.
   //
