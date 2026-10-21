@@ -494,6 +494,8 @@ function mountOverlay(force) {
     window.addEventListener('keydown', onKey, true)
     // 开机音乐：只配 550C 片头，UEG 档不配（见上面）。
     startBootMusic()
+    // 片头总时长：简易档约 3.95s、完整档约 13s（实测值），淡出提前 fadeMs 开始
+    scheduleBootFade(mode === 'simple' ? 3950 : 13000)
     record.show.start().then(finish, finish)
     // Last statement of the same task that put the overlay on screen: the host
     // half's first frame and this shadow root swap inside one paint.

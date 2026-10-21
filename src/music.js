@@ -37,7 +37,7 @@ const BGM_VOLUME_KEY = 'dsh-550c-boot:bgm:volume'
 const BGM_FADE_KEY = 'dsh-550c-boot:bgm:fade'
 
 /** 单曲上限 3MB（原始字节，不含 base64 放大）。 */
-const BGM_SINGLE_MAX_BYTES = 3 * 1024 * 1024
+const BGM_SINGLE_MAX_BYTES = 3686 * 1024
 /**
  * 曲库总上限 3MB（原始字节）。
  *
@@ -53,7 +53,7 @@ const BGM_SINGLE_MAX_BYTES = 3 * 1024 * 1024
  * UTF-16，远超 10 MiB 配额 —— 结果是浏览器先抛 QuotaExceededError，
  * "曲库已满，请先删除一首"那句话永远轮不到说。3MB 才是能真正触发上限的值。
  */
-const BGM_TOTAL_MAX_BYTES = 3 * 1024 * 1024
+const BGM_TOTAL_MAX_BYTES = 3686 * 1024
 /** 默认音量 0.6。 */
 const BGM_DEFAULT_VOLUME = 0.6
 /** 默认淡出时长 1500ms。 */
@@ -522,7 +522,7 @@ function rampBgmLevel(target, ms) {
 
 /** 放一首曲子。kind 是 'boot'（开机配乐）或 'preview'（设置页试听）。 */
 function playBgmTrack(track, bytes, kind) {
-  stopBgm()
+  stopBgmNow()
   let url = null
   try {
     url = URL.createObjectURL(new Blob([bytes], { type: track.mime }))
@@ -576,17 +576,40 @@ function playBgmTrack(track, bytes, kind) {
 /** 淡出到 0 然后停下。 */
 function fadeBgm(ms) {
   if (bgmPlayer.audio === null) return
+  // 已经在淡出：不要重开一条斜坡（否则收口/拆除阶段会把正在跑的淡出打断重来）✗
+  if (bgmPlayer.fading === true) return
+  bgmPlayer.fading = true
+
   if (bgmPlayer.fadeTimer !== null) window.clearTimeout(bgmPlayer.fadeTimer)
   const duration = Math.max(0, ms)
   rampBgmLevel(0, duration)
+  // 双保险：GainNode 可能因为 AudioContext 挂起/没连上而根本不生效，
+  // 那种情况下声音会在 duration 结束后被 stopBgm 硬切 —— 听感就是"戛然而止" ✗
+  // 所以这里同时把【元素音量】也按同样的时长降下来，两条任一生效都能听见淡出 ✓
+  const audio = bgmPlayer.audio
+  if (bgmPlayer.levelTimer !== null) window.clearTimeout(bgmPlayer.levelTimer)
+  const from = audio.volume
+  const started = Date.now()
+  const step = () => {
+    const ratio = duration <= 0 ? 1 : Math.min(1, (Date.now() - started) / duration)
+    audio.volume = Math.max(0, from * (1 - ratio))
+    if (ratio < 1) { bgmPlayer.levelTimer = window.setTimeout(step, 40) } else { bgmPlayer.levelTimer = null }
+  }
+  step()
   bgmPlayer.fadeTimer = window.setTimeout(() => {
     bgmPlayer.fadeTimer = null
-    stopBgm()
-  }, duration + 60)
+    stopBgmNow()
+  }, duration + 180)
 }
 
-/** 立刻停：暂停、释放 blob URL、断开增益图。 */
+/** 停：先淡出 600ms 再真正停。任何路径调它都不会硬切 ✓ */
 function stopBgm() {
+  if (bgmPlayer.audio === null) { stopBgmNow(); return }
+  fadeBgm(600)
+}
+/** 立刻停：暂停、释放 blob URL、断开增益图。 */
+function stopBgmNow() {
+  bgmPlayer.fading = false
   if (bgmPlayer.fadeTimer !== null) {
     window.clearTimeout(bgmPlayer.fadeTimer)
     bgmPlayer.fadeTimer = null
@@ -670,15 +693,38 @@ function currentBgmTrack() {
  */
 function fadeOutBootMusic(overrideMs) {
   try {
-    if (bgmPlayer.kind !== 'boot') return
+    // 不再用 kind 做门禁：片头收口时不管当前是哪条路径起的，都要淡出，
+    // 否则一旦 kind 不是 'boot'，这里直接 return，音乐就被后续 stopBgm 硬切 ✗
+    if (bgmPlayer.audio === null) return
     // 不传就用设置里的淡出时长；片头收口时传画面的 620ms ——
     // 让「画面渐隐」和「音乐渐弱」同时结束，否则音乐会比画面多响一截，听着像硬切。
+    // 优先用设置里的淡出时长（用户可调 0.5–4 秒）；只有显式传参时才覆盖 ✓
     const ms = typeof overrideMs === "number" ? overrideMs : readBgmFade()
-    fadeBgm(ms)
+        fadeBgm(ms)
   } catch (error) {
     console.error('[dsh-550c-boot] 开机音乐淡出失败', error)
   }
 }
+/** 按片头总时长提前排好淡出：淡出正好收在画面结束的那一刻 ✓ */
+let bootFadeTimer = null
+function scheduleBootFade(splashTotalMs) {
+  try {
+    if (bootFadeTimer !== null) window.clearTimeout(bootFadeTimer)
+    bootFadeTimer = null
+    if (bgmPlayer.audio === null) return
+    const fade = Math.max(0, readBgmFade())
+    // 让淡出在【画面结束后约 0.5 秒】才收完，听感上更自然 ✓
+    const TAIL_MS = 500
+    const delay = Math.max(0, Number(splashTotalMs) + TAIL_MS - fade)
+    bootFadeTimer = window.setTimeout(() => {
+      bootFadeTimer = null
+      fadeBgm(fade)
+    }, delay)
+  } catch (error) {
+    console.error('[dsh-550c-boot] 排程淡出失败', error)
+  }
+}
+
 
 /** 试听一首曲子（设置页用）。与开机配乐互斥：这里先把正在放的停掉。 */
 function previewBgm(track) {
@@ -935,7 +981,7 @@ function MusicRow() {
         'div',
         { className: 'dsh550c-row-text' },
         React.createElement('div', { className: 'dsh550c-row-title' }, '开机音乐'),
-        React.createElement('div', { className: 'dsh550c-row-desc' }, '片头播放时播放该音频，片头结束前渐弱淡出。'),
+        React.createElement('div', { className: 'dsh550c-row-desc' }, '片头播放时播放该音频，片头结束前渐弱淡出。音乐要比片头长 2 秒以上，否则会先播完。'),
       ),
       React.createElement(
         'div',
@@ -964,7 +1010,7 @@ function MusicRow() {
     React.createElement(
       'div',
       { className: 'dsh550c-note' },
-      '完整档 11 秒 · 简易档 4 秒 · 建议导入 12–15 秒。超过片头长度的部分不会播放，音乐会随片头结束渐弱淡出。',
+      '完整档约 13 秒 · 简易档约 4 秒 · 建议导入 15 秒左右。超过片头长度的部分不会播放，音乐会随片头结束渐弱淡出。',
     ),
     React.createElement(
       'div',
@@ -1018,7 +1064,7 @@ function MusicRow() {
     React.createElement(
       'div',
       { className: 'dsh550c-note' },
-      '曲库已用 ' + formatBgmSize(used) + ' / ' + String(BGM_TOTAL_MAX_BYTES / 1024 / 1024) + ' MB',
+      '曲库已用 ' + formatBgmSize(used) + ' / ' + String(Math.round(BGM_TOTAL_MAX_BYTES / 1024 / 1024 * 10) / 10) + ' MB',
     ),
     index.length === 0
       ? React.createElement('div', { className: 'dsh550c-music-empty' }, '曲库为空。点「导入音频」选一个本地音频文件。')
