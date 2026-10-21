@@ -61,7 +61,7 @@ const BGM_DEFAULT_FADE_MS = 1500
 /** 曲子先播完时的短淡出：直接切会爆音。 */
 const BGM_END_FADE_MS = 400
 /** 淡出时长的可调范围（毫秒）。 */
-const BGM_FADE_MIN_MS = 0
+const BGM_FADE_MIN_MS = 300
 const BGM_FADE_MAX_MS = 4000
 
 /** MIME → 人话标签，错误提示里用。 */
@@ -235,7 +235,12 @@ function readBgmFade() {
     if (raw === null || raw === '') return BGM_DEFAULT_FADE_MS
     const value = Number(raw)
     if (!Number.isFinite(value)) return BGM_DEFAULT_FADE_MS
-    return Math.min(BGM_FADE_MAX_MS, Math.max(BGM_FADE_MIN_MS, value))
+    // 单位兼容：滑块存的是【秒】（0.5–4），老版本存的是【毫秒】（500–4000）。
+    // <=10 一律当秒处理，否则 4 会被当成 4 毫秒 —— 那就是"瞬间静音"，
+    // 表现上就是"没有任何淡出"✗（这就是之前一直查不出来的原因）
+    const ms = value > 0 && value <= 10 ? value * 1000 : value
+    if (ms <= 0) return BGM_DEFAULT_FADE_MS
+    return Math.min(BGM_FADE_MAX_MS, Math.max(BGM_FADE_MIN_MS, ms))
   } catch (error) {
     return BGM_DEFAULT_FADE_MS
   }
@@ -579,6 +584,9 @@ function fadeBgm(ms) {
   // 已经在淡出：不要重开一条斜坡（否则收口/拆除阶段会把正在跑的淡出打断重来）✗
   if (bgmPlayer.fading === true) return
   bgmPlayer.fading = true
+  const __t0 = performance.now()
+  console.info('[550C-DIAG] 淡出开始 ms=' + Math.round(ms) + ' vol=' + (bgmPlayer.audio ? bgmPlayer.audio.volume.toFixed(2) : '?'))
+  setTimeout(() => console.info('[550C-DIAG] 淡出应结束 t=' + Math.round(performance.now() - __t0) + 'ms vol=' + (bgmPlayer.audio ? bgmPlayer.audio.volume.toFixed(2) : '已释放')), Math.round(ms) + 30)
 
   if (bgmPlayer.fadeTimer !== null) window.clearTimeout(bgmPlayer.fadeTimer)
   const duration = Math.max(0, ms)
@@ -716,7 +724,7 @@ function scheduleBootFade(splashTotalMs) {
     if (bootFadeTimer !== null) window.clearTimeout(bootFadeTimer)
     bootFadeTimer = null
     if (bgmPlayer.audio === null) return
-    const fade = Math.max(0, readBgmFade())
+    const fade = Math.max(BGM_FADE_MIN_MS, readBgmFade())
     // 让淡出在【画面结束后约 0.5 秒】才收完，听感上更自然 ✓
     const TAIL_MS = 500
     const delay = Math.max(0, Number(splashTotalMs) + TAIL_MS - fade)
