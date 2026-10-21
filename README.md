@@ -62,6 +62,15 @@
 
 两个插件**各自独立安装、互不依赖**；同时装上时，550C 设置页由本插件提供，皮肤只往里加自己的设置行。
 
+## 也可以试试这两个启动动画插件
+
+如果你正在挑启动动画，这两个项目也值得看一眼：
+
+- **[dsh-startup-secret](https://github.com/huzhengcai471-crypto/dsh-startup-secret)** —— by [@huzhengcai471-crypto](https://github.com/huzhengcai471-crypto)
+- **[dsh-startup-screen](https://github.com/6shenhonghong9/dsh-startup-screen)** —— by [@6shenhonghong9](https://github.com/6shenhonghong9)
+
+三个插件各自独立，装哪个都不影响另外两个。如果它们对你的口味，去给两位作者点个 ⭐ 就是最好的鼓励。
+
 ---
 
 ## 安装
