@@ -598,6 +598,7 @@ function fadeBgm(ms) {
   step()
   bgmPlayer.fadeTimer = window.setTimeout(() => {
     bgmPlayer.fadeTimer = null
+    bgmPlayer.fading = false
     stopBgmNow()
   }, duration + 180)
 }
@@ -605,10 +606,13 @@ function fadeBgm(ms) {
 /** 停：先淡出 600ms 再真正停。任何路径调它都不会硬切 ✓ */
 function stopBgm() {
   if (bgmPlayer.audio === null) { stopBgmNow(); return }
-  fadeBgm(600)
+  fadeBgm(Math.max(120, readBgmFade()))
 }
 /** 立刻停：暂停、释放 blob URL、断开增益图。 */
 function stopBgmNow() {
+  // 淡出还在跑：不要抢停（桌面端拆除脚手架时会调到这里，
+  // 一停就是"淡到一半突然没了"，正是用户听到的那一帧）✗
+  if (bgmPlayer.fading === true) return
   bgmPlayer.fading = false
   if (bgmPlayer.fadeTimer !== null) {
     window.clearTimeout(bgmPlayer.fadeTimer)
