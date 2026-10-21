@@ -498,7 +498,6 @@ function mountOverlay(force) {
     // 实测值（浏览器打点 2026-10-22）：简易档 3587ms、完整档 14010ms
     // 从 overlay 出现到 dsh550c-out 的真实间隔，不是文案里的估值
     scheduleBootFade(mode === 'simple' ? 3590 : 17000)
-    console.info('[550C-DIAG] 片头档位=' + mode + ' 排程淡出 total=' + (mode === 'simple' ? 3590 : 14010))
     record.show.start().then(finish, finish)
     // Last statement of the same task that put the overlay on screen: the host
     // half's first frame and this shadow root swap inside one paint.
@@ -512,32 +511,7 @@ function mountOverlay(force) {
   return record
 }
 
-
-/* ── 诊断用：记录谁在停音频（桌面端排查淡出被掐断）── */
-let __audioHooked = false
-function installAudioDiag() {
-  if (__audioHooked) return
-  __audioHooked = true
-  try {
-    const p = HTMLMediaElement.prototype
-    const op = p.pause
-    p.pause = function () {
-      if (this.tagName === 'AUDIO') console.warn('[550C-DIAG] audio.pause vol=' + this.volume.toFixed(2) + ' t=' + (this.currentTime || 0).toFixed(2) + ' 栈=' + (new Error().stack || '').split(String.fromCharCode(10)).slice(1, 4).join(' <- '))
-      console.info('[550C-DIAG] 已装音频钩子')
-      return op.apply(this, arguments)
-    }
-    const Ctx = window.AudioContext || window.webkitAudioContext
-    if (Ctx) {
-      const oc = Ctx.prototype.close
-      Ctx.prototype.close = function () {
-        console.warn('[550C-DIAG] AudioContext.close 栈=' + (new Error().stack || '').split(String.fromCharCode(10)).slice(1, 4).join(' <- '))
-        return oc.apply(this, arguments)
-      }
-    }
-  } catch (error) { /* 诊断而已，失败不影响功能 */ }
-}
 function apply(ctx) {
-  installAudioDiag()
   // The settings rows are ordinary slot contributions: they belong to a panel
   // and should live and die with it.
   //
@@ -643,7 +617,6 @@ function apply(ctx) {
     }
     window.setTimeout(claimSectionIfFree, 0)
     window.setInterval(claimSectionIfFree, 1500)
-
 
     ctx.slots.inject('settings.550c.item', () => {
     // The page wins. Drop the General placement first, or the same three rows

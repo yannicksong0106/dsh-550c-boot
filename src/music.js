@@ -589,9 +589,6 @@ function fadeBgm(ms) {
   // 已经在淡出：不要重开一条斜坡（否则收口/拆除阶段会把正在跑的淡出打断重来）✗
   if (bgmPlayer.fading === true) return
   bgmPlayer.fading = true
-  const __t0 = performance.now()
-  console.info('[550C-DIAG] 淡出开始 ms=' + Math.round(ms) + ' vol=' + (bgmPlayer.audio ? bgmPlayer.audio.volume.toFixed(2) : '?'))
-  setTimeout(() => console.info('[550C-DIAG] 淡出应结束 t=' + Math.round(performance.now() - __t0) + 'ms vol=' + (bgmPlayer.audio ? bgmPlayer.audio.volume.toFixed(2) : '已释放')), Math.round(ms) + 30)
 
   if (bgmPlayer.fadeTimer !== null) window.clearTimeout(bgmPlayer.fadeTimer)
   const duration = Math.max(0, ms)
@@ -741,7 +738,6 @@ function scheduleBootFade(splashTotalMs) {
     console.error('[dsh-550c-boot] 排程淡出失败', error)
   }
 }
-
 
 /** 试听一首曲子（设置页用）。与开机配乐互斥：这里先把正在放的停掉。 */
 function previewBgm(track) {
