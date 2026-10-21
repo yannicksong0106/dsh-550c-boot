@@ -350,15 +350,27 @@
   .idBars2{display:flex;gap:2px;height:34px;align-items:flex-end}
   /* 条纹要"活"：底部对齐做 scaleY 呼吸，每根错开相位（延迟在 JS 里给） */
   .idBars2 i{display:block;width:2.5px;background:var(--ink);opacity:.8;
-    transform-origin:bottom;animation:l-bars 1.5s ease-in-out infinite alternate}
+    transform-origin:bottom}
   @keyframes l-bars{0%{transform:scaleY(.55)}100%{transform:scaleY(1)}}
   .idFoot2 em{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.2em;color:var(--dim)}
-  /* 结尾盖章：核验通过 */
-  .stamp{position:absolute;right:18px;bottom:52px;border:2px solid var(--ink);padding:6px 12px;
-    font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--ink);opacity:0;
-    transform:rotate(-8deg) scale(1.6)}
-  .stamp.on{animation:l-stamp 260ms cubic-bezier(.2,1.5,.4,1) both}
-  @keyframes l-stamp{from{opacity:0;transform:rotate(-8deg) scale(1.6)}to{opacity:1;transform:rotate(-8deg) scale(1)}}
+/* 结尾结论：反显状态条（终端里的反白状态行）—— 不是旋转的实体印章。
+   整卡宽、实底、深浅翻转，从左往右"擦"出来；文字先进乱码再逐字定格。
+   另配一条整卡读取光带（mix-blend-mode:screen，扫过之处自然提亮）。 */
+.stamp{position:absolute;left:0;right:0;bottom:44px;display:flex;align-items:center;
+    padding:8px 18px;background:var(--ink);color:var(--bg);
+    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.2em;
+    opacity:0;clip-path:inset(0 0 0 100%)}
+.stamp.on{opacity:1;animation:l-stampwipe 300ms cubic-bezier(.25,.9,.2,1) forwards}
+@keyframes l-stampwipe{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
+.stamp::before{content:"▸";margin-right:.6em;opacity:.7}
+.stampText{display:inline-flex;gap:.1em}
+.stampText span{display:inline-block;min-width:.94em;text-align:center}
+.stampTag{margin-left:auto;font-size:9.5px;font-weight:600;letter-spacing:.18em;opacity:.72;white-space:nowrap}
+.readbar{position:absolute;left:-10%;right:-10%;height:56px;top:-70px;pointer-events:none;z-index:6;
+    opacity:0;mix-blend-mode:screen;
+    background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--ink) 24%,transparent),transparent)}
+.readbar.on{animation:l-readbar 700ms cubic-bezier(.35,0,.25,1) both}
+@keyframes l-readbar{0%{top:-70px;opacity:0}10%{opacity:1}86%{opacity:1}100%{top:101%;opacity:0}}
 
   /* 右下：地球 + UEG + 正在检查登录环境 */
   /* 地球这一列：父层必须始终可见 —— 地球是从第一幕"飞"过来的，
@@ -614,7 +626,8 @@
           <div class="idBars2" id="idBars"></div>
           <em>ISSUED BY UEG · VERIFIED BY 550C</em>
         </div>
-        <div class="stamp" id="stamp">核验通过</div>
+        <div class="readbar" id="readbar" aria-hidden="true"></div>
+<div class="stamp" id="stamp" aria-label="核验通过"><span class="stampText" id="stampText"></span><span class="stampTag">ACCESS GRANTED</span></div>
       </div>
     </div>
 
@@ -647,6 +660,10 @@
 <script src="assets/ueg-land.js?v=13"></script>
 <script>
   const stage = document.getElementById('stage')
+// 底部竖条状态：play() 里会调用 resetBars()，声明必须在它之前
+var barsRaf = null
+var barsStart = 0
+var barsSettleAt = 0
   const seek = document.getElementById('seek')
   const msLabel = document.getElementById('ms')
 
@@ -1379,6 +1396,46 @@
       item.style.height = `${String(8 + ((i * 37 + serial.charCodeAt(i % serial.length) * 7) % 26))}px`
       item.style.animationDelay = `${String(-i * 0.045)}s`   // 错开相位，条纹像在流动
       bars.appendChild(item)
+startBars()
+/* 底部竖条：脚本驱动。落定 = 把脉动幅度平滑衰减到 0.14（逐根延迟 8ms，从左往右收）。
+   不用 CSS 关键帧，因为撤掉动画的瞬间 transform 会弹回满高，那就是"突兀"的来源。 */
+function barsTick(now) {
+  const el = document.getElementById("idBars")
+  if (el === null || el.children.length === 0) { barsRaf = null; return }
+  if (barsStart === 0) barsStart = now
+  const tt = (now - barsStart) / 1000
+  for (let i = 0; i < el.children.length; i += 1) {
+    const bar = el.children[i]
+    const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(tt * 2.1 + i * 0.42))
+    let p = 0
+    if (barsSettleAt !== 0) {
+      p = (now - barsSettleAt - i * 8) / 760
+      p = p < 0 ? 0 : p > 1 ? 1 : p
+    }
+    const e = 1 - Math.pow(1 - p, 3)
+    bar.style.transform = "scaleY(" + (pulse * (1 - e) + 0.14 * e).toFixed(3) + ")"
+    bar.style.opacity = (0.8 - 0.42 * e).toFixed(3)
+  }
+  if (barsSettleAt !== 0 && now - barsSettleAt > 760 + el.children.length * 8 + 80) { barsRaf = null; return }
+  barsRaf = requestAnimationFrame(barsTick)
+}
+function startBars() {
+  if (barsRaf !== null) return
+  barsStart = 0
+  barsRaf = requestAnimationFrame(barsTick)
+}
+function settleBars() {
+  if (barsSettleAt !== 0) return
+  barsSettleAt = performance.now()
+  startBars()
+}
+function resetBars() {
+  barsSettleAt = 0
+  barsStart = 0
+  const el = document.getElementById("idBars")
+  if (el !== null) for (const bar of el.children) { bar.style.transform = ""; bar.style.opacity = "" }
+  startBars()
+}
     }
     /* 自定义二维码：设置里把内容编码成位矩阵存下来（"模块数:base64 位"），
      这里按卡片风格重画 —— 浅色底板 + 深色点阵模块（gap 1px），
@@ -1592,7 +1649,51 @@
     })
     // ⑥ 盖章：核验通过（动画自己走，配音跟着起，不等它）
     pct.textContent = '100% · 核验通过'
-    document.getElementById('stamp').classList.add('on')
+    /* 状态条文字的逐字解码：先整串乱码滚动，再从左往右逐字定格。 */
+const STAMP_TEXT = '核验通过'
+const STAMP_NOISE = '█▓▒░#*+=<>/|01'
+let stampNodes = null
+let stampRaf = null
+function buildStampNodes() {
+  if (stampNodes !== null) return stampNodes
+  const box = document.getElementById("stampText")
+  if (box === null) return null
+  stampNodes = []
+  for (let i = 0; i < STAMP_TEXT.length; i += 1) {
+    const span = document.createElement("span")
+    span.textContent = STAMP_TEXT[i]
+    box.appendChild(span)
+    stampNodes.push(span)
+  }
+  return stampNodes
+}
+function paintStamp(locked) {
+  const nodes = stampNodes === null ? buildStampNodes() : stampNodes
+  if (!nodes) return
+  for (let i = 0; i < nodes.length; i += 1) {
+    nodes[i].textContent = i < locked ? STAMP_TEXT[i] : STAMP_NOISE[(Math.random() * STAMP_NOISE.length) | 0]
+  }
+}
+function playStamp() {
+  buildStampNodes()
+  const bar = document.getElementById("readbar")
+  if (bar) { bar.classList.remove("on"); void bar.offsetWidth; bar.classList.add("on") }
+  const started = performance.now()
+  let lastNoise = 0
+  if (stampRaf !== null) { cancelAnimationFrame(stampRaf); stampRaf = null }
+  const tick = () => {
+    const elapsed = performance.now() - started
+    const locked = elapsed < 320 ? 0 : Math.min(STAMP_TEXT.length, Math.ceil((elapsed - 320) / 95))
+    if (locked >= STAMP_TEXT.length) { paintStamp(STAMP_TEXT.length); stampRaf = null; return }
+    if (elapsed - lastNoise > 70) { paintStamp(locked); lastNoise = elapsed }
+    stampRaf = requestAnimationFrame(tick)
+  }
+  stampRaf = requestAnimationFrame(tick)
+}
+
+document.getElementById('stamp').classList.add('on')
+playStamp()
+settleBars()
     playLine(4)   // 第 4 句：Verification complete. Identity confirmed.
     await wait(1100)
     // ⑦ 只淡出终端与卡片；地球那一列【保留】—— 它要自己移过去，不是重造一颗。
