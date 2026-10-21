@@ -668,10 +668,13 @@ function currentBgmTrack() {
  * 遮罩就永远退不掉了（用户会卡在一块黑屏前，连设置都进不去）。所以这里
  * 同样吞掉自己的异常。
  */
-function fadeOutBootMusic() {
+function fadeOutBootMusic(overrideMs) {
   try {
     if (bgmPlayer.kind !== 'boot') return
-    fadeBgm(readBgmFade())
+    // 不传就用设置里的淡出时长；片头收口时传画面的 620ms ——
+    // 让「画面渐隐」和「音乐渐弱」同时结束，否则音乐会比画面多响一截，听着像硬切。
+    const ms = typeof overrideMs === "number" ? overrideMs : readBgmFade()
+    fadeBgm(ms)
   } catch (error) {
     console.error('[dsh-550c-boot] 开机音乐淡出失败', error)
   }

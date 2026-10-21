@@ -445,7 +445,7 @@ function mountOverlay(force) {
     // 片头结束 = 音乐淡出的起点。渐弱比片头自己的 620ms 长，
     // 免得音乐在画面消失的那一刻硬切（硬切会爆音）。
     // 这条路径是片头唯一的收口 —— 播完、Esc 跳过、点击跳过、看门狗兜底都汇到这儿。
-    fadeOutBootMusic()
+    fadeOutBootMusic(FADE_MS)
     host.classList.add('dsh550c-out')
     record.fadeTimer = window.setTimeout(dispose, FADE_MS + 40)
   }
