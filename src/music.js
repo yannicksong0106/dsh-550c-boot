@@ -248,9 +248,14 @@ function readBgmFade() {
 
 function writeBgmFade(value) {
   try {
-    window.localStorage.setItem(BGM_FADE_KEY, String(value))
+    // 写入端也做单位归一：滑块的秒值（0.5–4）先乘 1000 再落库，
+    // 否则存的 "4" 会被读端当成 4 毫秒 → 瞬间静音 ✗
+    const raw = Number(value)
+    const ms = Number.isFinite(raw) && raw > 0 && raw <= 10 ? raw * 1000 : raw
+    const safe = Math.min(BGM_FADE_MAX_MS, Math.max(BGM_FADE_MIN_MS, Number.isFinite(ms) ? ms : BGM_DEFAULT_FADE_MS))
+    window.localStorage.setItem(BGM_FADE_KEY, String(safe))
   } catch (error) {
-    /* private mode */
+    console.error('[dsh-550c-boot] 淡出时长写入失败', error)
   }
 }
 
