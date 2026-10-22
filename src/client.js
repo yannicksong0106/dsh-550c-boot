@@ -652,7 +652,24 @@ function apply(ctx) {
         ),
       )
     }
-    window.setTimeout(claimSectionIfFree, 0)
+    // 页面既然归本插件了，就立刻把行搬过来 —— 否则 550C 页只有空壳：
+  // 页签在、内容空，行全留在「通用设置」里 ✗（实测就是这个症状）
+  const moveRowsHere = () => {
+    try {
+      if (window.__dsh550cPageOwner) return
+      if (window.__dsh550cBootPage !== true) return
+      if (window.__dsh550cRowsOnSeries === true) return
+      window.__dsh550cRowsOnSeries = true
+      if (typeof inGeneral === "function") inGeneral()
+      placeOnSeries()
+    } catch (error) {
+      console.error("[dsh-550c-boot] 把行搬到本页失败", error)
+    }
+  }
+  window.setTimeout(moveRowsHere, 0)
+  window.setTimeout(moveRowsHere, 800)
+
+  window.setTimeout(claimSectionIfFree, 0)
     window.setInterval(claimSectionIfFree, 1500)
 
     ctx.slots.inject('settings.550c.item', () => {
