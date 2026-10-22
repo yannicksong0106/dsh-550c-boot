@@ -617,6 +617,8 @@ function apply(ctx) {
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-music', order: 70 }, MusicRow),
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-update', order: 80 }, VersionRow),
     ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-skin-promo', order: 85 }, SkinPromoRow),
+    // 「外观」页是皮肤的地盘；皮肤不在时放一行推荐，免得整页空白 ✗
+    ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-skin-promo-look', order: 10 }, SkinPromoRow),
       ctx.slots.register({ name: 'settings.550c.anim.ueg', id: 'boot-550c-login', order: 80 }, LoginRow),
     ]
     onSeries = () => {

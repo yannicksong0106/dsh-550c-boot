@@ -34,7 +34,9 @@ function Panel550c(props) {
   // 整行退回浏览器默认样式 —— 输入框是 inline-block，按宽度自动流排，看起来就像挤成三列。
   // 放到页壳上：进 550C 页的第一帧就有样式，先点哪个 tab 都一样。
   ensureRowStyle()
-  const [tab, setTab] = React.useState('look')
+  // 默认落在有内容的页签：
+// 「外观」是皮肤填的，皮肤没启用时那一页是空的（实测：打开设置就看到白板）✗
+const [tab, setTab] = React.useState(window.__dsh550cPageOwner === true ? 'look' : 'boot550c')
   const active = PANEL_TABS.find((item) => item.id === tab) ?? PANEL_TABS[0]
   return React.createElement(
     'div',
