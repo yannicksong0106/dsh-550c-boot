@@ -122,7 +122,7 @@ const ROW_CSS = `
 /* 选中态的文字必须用 brand-text，不能写死白色：
    DSH 的 brand-primary 是随主题翻面的（浅色近黑、深色近白），
    写死 color:#fff 在暗色主题下就成了白底白字，整个分段控件的文字看不见。 */
-.dsh550c-seg button.on{background:#e8a020;color:#191006;font-weight:600}
+.dsh550c-seg button.on{background:var(--dsw-alias-label-primary,#191919);color:var(--dsw-alias-bg-primary,#fff);font-weight:600}
 .dsh550c-preview{border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));background:transparent;color:var(--dsw-alias-label-primary,#191919);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;border-radius:8px;cursor:pointer}
 .dsh550c-preview:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 .dsh550c-preview[disabled]{opacity:.55;cursor:default}
