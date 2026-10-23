@@ -89,6 +89,78 @@ function SettingsRow() {
  * profile's plugins. Nothing happens until a button is pressed.
  */
 function VersionRow() {
+  const view = useVersionCheck()
+  const payload = view.state.payload
+  const outdated = view.state.status === 'done' && payload !== null && payload.state === 'outdated'
+  const canApply = payload?.canApply === true
+  // 宿主半边随进程启动加载，客户端半边随页面刷新加载 —— 刷新过页面但没重启客户端时，
+  // 这一行会显示出来，而宿主那边根本没有这两条路由。
+  const hostStale = view.current === null
+  const note = versionNote({
+    state: view.state,
+    applying: view.applying,
+    copied: view.copied,
+    payload: payload,
+    outdated: outdated,
+    canApply: canApply,
+    current: view.current,
+    onOpenPage: view.openPackagePage,
+    onCopy: view.copy,
+  })
+
+  return React.createElement(
+    'div',
+    { className: 'dsh550c-row' },
+    React.createElement(
+      'div',
+      { className: 'dsh550c-row-text' },
+      React.createElement('div', { className: 'dsh550c-row-title' }, '版本与更新'),
+      React.createElement(
+        'div',
+        { className: 'dsh550c-row-desc' },
+        view.current === null ? '从 npm 查询最新版本。' : '当前 v' + view.current + '，从 npm 查询最新版本。',
+      ),
+      hostStale && view.state.status === 'idle'
+        ? React.createElement('div', { className: 'dsh550c-note bad' }, '宿主半边是旧版本，重启客户端后可用。')
+        : null,
+      note,
+    ),
+    React.createElement(
+      'div',
+      { className: 'dsh550c-row-ctrl' },
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh550c-preview',
+          disabled: view.state.status === 'checking',
+          onClick: view.check,
+        },
+        view.state.status === 'checking' ? '检查中…' : '检查更新',
+      ),
+      outdated && canApply && view.applying.status !== 'done'
+        ? React.createElement(
+            'button',
+            {
+              type: 'button',
+              className: 'dsh550c-preview',
+              disabled: view.applying.status === 'running',
+              onClick: view.apply,
+            },
+            view.applying.status === 'running' ? '更新中…' : '立即更新',
+          )
+        : null,
+    ),
+  )
+}
+
+/**
+ * 版本行的状态与动作。
+ *
+ * 抽出来的理由和 MusicRow 一样：一堆状态 + 四个回调留在渲染函数里，
+ * 外壳很快又会长回两百行。这里只管"状态怎么变"，不管"长什么样"。
+ */
+function useVersionCheck() {
   const [current] = React.useState(() =>
     typeof window[VERSION_GLOBAL] === 'string' && window[VERSION_GLOBAL] !== '' ? window[VERSION_GLOBAL] : null,
   )
@@ -138,7 +210,7 @@ function VersionRow() {
         )
       }
     } catch (error) {
-      /* clipboard refused: the spec is on screen to select by hand */
+      /* 剪贴板拒绝：页面上有明文可手动选中 */
     }
   }, [])
 
@@ -147,49 +219,68 @@ function VersionRow() {
     try {
       window.open(url, '_blank', 'noopener,noreferrer')
     } catch (error) {
-      /* a blocked popup is not worth an error state; the URL is public */
+      /* 弹窗被拦不值得报错：URL 本来就是公开的 */
     }
   }, [state.payload])
 
-  const payload = state.payload
-  const source = payload?.source === 'npmmirror' ? '国内镜像' : payload?.source === 'npmjs' ? 'npm 官方' : null
-  const outdated = state.status === 'done' && payload !== null && payload.state === 'outdated'
-  const canApply = payload?.canApply === true
-  // The host half loads when the process starts, the client half on every page
-  // load — so a refresh can show this row while the host still has no routes.
-  const hostStale = current === null
-  let note = null
+  return {
+    current: current,
+    state: state,
+    applying: applying,
+    copied: copied,
+    check: check,
+    apply: apply,
+    copy: copy,
+    openPackagePage: openPackagePage,
+  }
+}
+
+/**
+ * 版本行的说明文字：纯函数，同样的输入必然得到同样的输出。
+ *
+ * 八种形态，顺序就是优先级 —— 原来是一串 if/else if 嵌在渲染函数里，
+ * 既读不出"一共有几种状态"，也没法单独测。
+ */
+function versionNote(view) {
+  const state = view.state
+  const applying = view.applying
+  const payload = view.payload
 
   if (state.status === 'checking') {
-    note = React.createElement('div', { className: 'dsh550c-note' }, '检查中…')
-  } else if (state.status === 'failed') {
-    note = React.createElement(
+    return React.createElement('div', { className: 'dsh550c-note' }, '检查中…')
+  }
+  if (state.status === 'failed') {
+    return React.createElement(
       'div',
       { className: 'dsh550c-note bad' },
       /404/.test(state.error) ? '宿主半边是旧版本，重启客户端后可用。' : '检查失败：' + state.error,
-      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: openPackagePage }, '打开 npm 页面'),
+      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: view.onOpenPage }, '打开 npm 页面'),
     )
-  } else if (outdated && applying.status === 'running') {
-    note = React.createElement('div', { className: 'dsh550c-note up' }, '更新中…')
-  } else if (outdated && applying.status === 'done') {
-    note = React.createElement(
+  }
+  if (view.outdated && applying.status === 'running') {
+    return React.createElement('div', { className: 'dsh550c-note up' }, '更新中…')
+  }
+  if (view.outdated && applying.status === 'done') {
+    return React.createElement(
       'div',
       { className: 'dsh550c-note up' },
       '已更新到 v' + String(applying.result?.version ?? payload.latest) + '，重启客户端生效。',
     )
-  } else if (outdated && applying.status === 'failed') {
-    note = React.createElement(
+  }
+  if (view.outdated && applying.status === 'failed') {
+    return React.createElement(
       'div',
       { className: 'dsh550c-note bad' },
       String(applying.result?.hint ?? '更新失败。'),
-      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: () => copy(INSTALL_SPEC) }, copied ? '已复制' : '复制包名'),
+      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: () => view.onCopy(INSTALL_SPEC) }, view.copied ? '已复制' : '复制包名'),
     )
-  } else if (outdated) {
-    note = React.createElement(
+  }
+  if (view.outdated) {
+    return React.createElement(
       'div',
       { className: 'dsh550c-note up' },
       '有新版本 v' + String(payload.latest) + '。',
-      canApply
+      view.canApply
         ? '点「立即更新」，然后重启客户端。'
         : React.createElement(
             'span',
@@ -198,65 +289,22 @@ function VersionRow() {
             React.createElement('span', { className: 'dsh550c-code' }, INSTALL_SPEC),
             '，然后重启。',
           ),
-      canApply
+      view.canApply
         ? null
-        : React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: () => copy(INSTALL_SPEC) }, copied ? '已复制' : '复制包名'),
+        : React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: () => view.onCopy(INSTALL_SPEC) }, view.copied ? '已复制' : '复制包名'),
     )
-  } else if (state.status === 'done') {
-    note = React.createElement(
+  }
+  if (state.status === 'done') {
+    return React.createElement(
       'div',
       { className: 'dsh550c-note' },
       payload !== null && payload.state === 'unknown'
         ? '查不到最新版本。'
-        : '已是最新 v' + String(payload?.current ?? current ?? '?') + '。',
-      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: openPackagePage }, '打开 npm 页面'),
+        : '已是最新 v' + String(payload?.current ?? view.current ?? '?') + '。',
+      React.createElement('button', { type: 'button', className: 'dsh550c-link', onClick: view.onOpenPage }, '打开 npm 页面'),
     )
   }
-
-  return React.createElement(
-    'div',
-    { className: 'dsh550c-row' },
-    React.createElement(
-      'div',
-      { className: 'dsh550c-row-text' },
-      React.createElement('div', { className: 'dsh550c-row-title' }, '版本与更新'),
-      React.createElement(
-        'div',
-        { className: 'dsh550c-row-desc' },
-        current === null ? '从 npm 查询最新版本。' : '当前 v' + current + '，从 npm 查询最新版本。',
-      ),
-      hostStale && state.status === 'idle'
-        ? React.createElement('div', { className: 'dsh550c-note bad' }, '宿主半边是旧版本，重启客户端后可用。')
-        : null,
-      note,
-    ),
-    React.createElement(
-      'div',
-      { className: 'dsh550c-row-ctrl' },
-      React.createElement(
-        'button',
-        {
-          type: 'button',
-          className: 'dsh550c-preview',
-          disabled: state.status === 'checking',
-          onClick: check,
-        },
-        state.status === 'checking' ? '检查中…' : '检查更新',
-      ),
-      outdated && canApply && applying.status !== 'done'
-        ? React.createElement(
-            'button',
-            {
-              type: 'button',
-              className: 'dsh550c-preview',
-              disabled: applying.status === 'running',
-              onClick: apply,
-            },
-            applying.status === 'running' ? '更新中…' : '立即更新',
-          )
-        : null,
-    ),
-  )
+  return null
 }
 
 /**

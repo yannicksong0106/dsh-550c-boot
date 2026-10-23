@@ -607,50 +607,26 @@ function SkinPromoRow() {
   )
 }
 
-function apply(ctx) {
-  // 客户端重连 / 热重挂载会再次调用 apply：
-  // 重复 register 同一个 slot id 会抛错，抛错之后 550C 面板就注册不上了
-  // —— 表现就是"设置里 550C 那个按键不见了，只能重启找回来" ✗
-  if (dsh550cGet('applied') === true) {
-    console.info('[dsh-550c-boot] apply 已执行过，跳过重复注册')
-    return
-  }
-  dsh550cSet('applied', true)
-  // The settings rows are ordinary slot contributions: they belong to a panel
-  // and should live and die with it.
-  //
-  // WHERE THEY LIVE IS NEGOTIATED, and the reason is the shared ledger. The
-  // obvious home is `settings.general.item`, which every feature package shares —
-  // and `dsh-550c-skin` was injecting its three rows there with the SAME order
-  // numbers as this plugin (26/27/28). Equal orders tie, a list slot sorts by
-  // (priority, order), a stable sort leaves ties in registration order, and the
-  // General page came out as two unrelated plugins alternating row by row:
-  //
-  //   550C 开机动画 · 550C 皮肤 · 开机动画配色 · CRT 气氛 · 版本与更新 · 控制台外观
-  //
-  // Measured live: 17 rows in General, 6 of them ours, interleaved. So the skin
-  // now declares a 550C page of its own (`settings.section` id `550c`) and the
-  // 550C rows gather there. Slot names are declared exactly once — a second
-  // `children` table for the same key THROWS — so this plugin injects into the
-  // page the skin declares rather than declaring one of its own.
-  //
-  // The fallback to General is not politeness: `register()` throws for an
-  // undeclared slot, so a plugin loaded without the skin has nowhere else to go.
-  //
-  // A plain "check whether the page exists, then choose" does NOT work. `inject`
-  // runs its callback the moment its slot is DECLARED, and General is declared by
-  // the settings shell long before a third-party plugin declares its own page —
-  // so at the moment General asks, the honest answer is still "General". The rows
-  // are therefore placed in General and MOVED when the 550C page appears.
-  // `register()` returns a disposer and registering the same id twice in one list
-  // slot throws, so the move always disposes before it registers.
-
-  /** The fallback placement in the shared General ledger, while it is the home. */
+/**
+ * 设置行：先落「通用」页，等「550C」页出现再搬过去。
+ *
+ * 背景（实测）：两个插件曾经都往 `settings.general.item` 里插、还用了同一批 order 号
+ * （26/27/28）。同号在稳定排序里按注册顺序排，结果通用页变成两个插件逐行交替：
+ * 17 行里 6 行是本系列的，"550C 开机动画 · 550C 皮肤 · 开机动画配色 · CRT 气氛 · …"。
+ * 所以皮肤改成自己声明一页，本插件把行搬过去；插槽名只能声明一次（重复的 children 表会抛），
+ * 因此这里是注入皮肤声明的那一页，而不是自己再声明一页。
+ *
+ * 为什么是"先落再搬"而不是"先判断再落"：`inject` 的回调在插槽【声明的那一刻】就跑，
+ * 而通用页由设置壳声明，远早于第三方插件声明自己的页 —— 所以通用页问起来时，
+ * 诚实的答案只能是"通用页"。等 550C 页出现，再把行搬过去（register 返回 disposer，
+ * 同一个 id 在同一个 list 插槽里注册两次会抛，所以搬之前必须先 dispose）。
+ */
+function installSettingsRows(ctx) {
+  /** 落在共享的「通用」账本上时的 disposer 集合。 */
   let inGeneral = null
-  /** The placement on the 550C page, once that page exists. */
+  /** 落在「550C」页上时的 disposer 集合。 */
   let onSeries = null
 
-  /** Place the rows in the shared General ledger. */
   const placeInGeneral = () => {
     const placed = [
       ctx.slots.register({ name: 'settings.general.item', id: 'boot-550c', order: 26 }, SettingsRow),
@@ -669,15 +645,10 @@ function apply(ctx) {
   }
 
   /**
-   * Place the three rows on the 550C page the skin declares.
-   *
-   * The orders start at 50, NOT at 10. The page's first four rows are the skin's
-   * — 配色 10, 气氛 20, 仪表盘 30, 控制台外观 40 — so copying this plugin's old
-   * 26/27/28 across would have recreated the exact collision it was written to
-   * fix, one page over. The convention for the series is tens: the skin owns
-   * 10..40, this plugin takes 50..80, and a later plugin slots into the gaps.
-   * 开机音乐挨着开机动画和配色（都是片头的事），版本与更新挪到 80 收尾 ——
-   * 它是"关于这个插件"的信息，不该插在片头设置中间。
+   * 「550C」页上的号段从 50 起，不是 10 —— 那一页的前四行是皮肤的
+   * （配色 10、气氛 20、仪表盘 30、控制台外观 40）。把老的 26/27/28 照搬过去，
+   * 等于把当初要修的撞号原样复制到另一页。系列的约定是按十位分段：
+   * 皮肤占 10..40，本插件占 50..85，后来的插件往缝里插。
    */
   const placeOnSeries = () => {
     const placed = [
@@ -695,23 +666,53 @@ function apply(ctx) {
     }
   }
 
-  // 「550C」页归谁：皮肤在场就归皮肤，皮肤不在 boot 顶上（系列共用同一个入口）。
-  //
-  // 不能只判断一次：skin 可能在运行时被禁用，它的注册随之撤销，那一页就空了
-  // （实测：两个都开时关掉 skin，550C 这一页会消失）。所以隔一会儿再确认一次。
-  //
-  // 但确认必须收着做 —— 这里原来是一个永不清理的 setInterval(1500)，
-  // 插件被禁用之后它还在跑，一边跑一边往 window 上写旗子。
-  // 现在：确认成功就停，插件卸载时也停。
+  // 550C 页的子插槽先注入：同一轮里两个插槽都声明时，页内的那份要先挂上。
+  ctx.slots.inject('settings.550c.item', () => {
+    // 页面赢了：先把通用页那份收掉，否则同一批行会在两个账本里各渲染一遍。
+    inGeneral?.()
+    inGeneral = null
+    placeOnSeries()
+    return () => {
+      onSeries?.()
+      onSeries = null
+      // 页面没了（皮肤被运行期卸载）：退回共享账本，别让这个插件一行设置都不剩。
+      // try：卸载可能与 shell 自己的拆除赛跑，往已经消失的插槽里注册会抛。
+      try {
+        if (inGeneral === null) placeInGeneral()
+      } catch (error) {
+        /* 通用页也没了，没有可退的地方 */
+      }
+    }
+  })
+
+  ctx.slots.inject('settings.general.item', () => {
+    if (onSeries === null) placeInGeneral()
+    return () => {
+      inGeneral?.()
+      inGeneral = null
+    }
+  })
+}
+
+/**
+ * 「550C」页归谁：皮肤在场就归皮肤，皮肤不在 boot 顶上。
+ *
+ * 不能只判断一次：skin 可能在运行时被禁用，它的注册随之撤销，那一页就空了
+ * （实测：两个都开时关掉 skin，550C 这一页会消失）。所以隔 1.5 秒再确认一次。
+ *
+ * 但确认必须收着做 —— 这里原来是一个永不清理的 setInterval，插件被禁用之后
+ * 它还在跑，一边跑一边往 window 上写旗子。现在：归属落定即停，卸载时也停。
+ */
+function installPageClaim(ctx) {
   let claimTimer = null
   const stopClaimTimer = () => {
     if (claimTimer === null) return
     window.clearTimeout(claimTimer)
     claimTimer = null
   }
-  function claimSectionIfFree() {
-    // 皮肤在场：页面归它，boot 不抢。这是唯一正确的判据 ——
-    // 原来那行判的是一个没人写入的死键（早期版本的页面归属旗子）。
+
+  const claimSectionIfFree = () => {
+    // 皮肤在场：页面归它，boot 不抢。唯一判据，别再读 window 上的旗子。
     if (dsh550cSkinInstalled()) return
     if (dsh550cGet('bootPageOwned') === true) {
       stopClaimTimer()
@@ -734,9 +735,8 @@ function apply(ctx) {
       ),
     )
   }
+
   claimTimer = window.setTimeout(claimSectionIfFree, 0)
-  // 皮肤被运行期禁用时，页面归 boot —— 这是一次兜底确认，不是常驻轮询：
-  // 归属一旦落定就停，插件卸载时也停。
   const claimRetry = window.setInterval(() => {
     if (dsh550cGet('bootPageOwned') === true || dsh550cSkinInstalled()) stopClaimTimer()
     else claimSectionIfFree()
@@ -745,48 +745,31 @@ function apply(ctx) {
     stopClaimTimer()
     window.clearInterval(claimRetry)
   }, 'dsh-550c-boot: 550C page claim guard')
+}
 
-    ctx.slots.inject('settings.550c.item', () => {
-    // The page wins. Drop the General placement first, or the same three rows
-    // render in both ledgers.
-    inGeneral?.()
-    inGeneral = null
-    placeOnSeries()
-    return () => {
-      onSeries?.()
-      onSeries = null
-      // The page went away — the skin was unloaded at run time. Go back to the
-      // shared ledger rather than leaving this plugin with no settings at all.
-      // Guarded because a teardown can race the shell's own, and registering into
-      // a slot that is already gone throws.
-      try {
-        if (inGeneral === null) placeInGeneral()
-      } catch (error) {
-        /* General is gone too; there is nothing left to fall back to. */
-      }
-    }
-  })
+/**
+ * 片头关掉、只留登录授权时的入口。
+ *
+ * 登录是独立相位，不是片头的子步骤：片头关着的时候没人会调交接函数，
+ * 想要"只要授权界面"的用户否则两边都拿不到。延迟 150ms 让设置行先渲染完。
+ */
+function installLoginWithoutSplash(ctx) {
+  const splashOff = readMode() === 'off'
+  const loginOn = readLoginScreen() !== 'off'
+  if (!splashOff || !loginOn) return
+  ctx.effect(() => {
+    const timer = window.setTimeout(() => startLoginPhase(), 150)
+    return () => window.clearTimeout(timer)
+  }, 'dsh-550c-boot: login without the splash')
+}
 
-  ctx.slots.inject('settings.general.item', () => {
-    if (onSeries === null) placeInGeneral()
-    return () => {
-      inGeneral?.()
-      inGeneral = null
-    }
-  })
-
-  // The login is a phase of its own, not a child of the splash: with the splash
-  // switched off nothing would ever call the hand-off, and a user who wants the
-  // authorization screen without the 16-second intro would otherwise get neither.
-  if (readMode() === 'off' && readLoginScreen() !== 'off') {
-    ctx.effect(() => {
-      const timer = window.setTimeout(() => startLoginPhase(), 150)
-      return () => window.clearTimeout(timer)
-    }, 'dsh-550c-boot: login without the splash')
-  }
-
-  // The splash is deliberately NOT a slot contribution — mountOverlay() explains
-  // why. Registered as an effect so disabling the plugin takes the splash down.
+/**
+ * 卸载：插件被禁用时把片头、登录、音乐全部收掉。
+ *
+ * 片头故意不是槽位贡献（原因见 mountOverlay 的注释），所以它没有天然的
+ * 生命周期，只能由这个 effect 负责。
+ */
+function installTeardown(ctx) {
   ctx.effect(
     () => () => {
       pluginTornDown = true
@@ -798,6 +781,31 @@ function apply(ctx) {
     },
     'dsh-550c-boot: splash teardown',
   )
+}
+
+/**
+ * 插件入口。
+ *
+ * 四件事分开装，各自能单独读：
+ *   设置行（含"通用页 → 550C 页"的搬迁）
+ *   550C 页归属（皮肤不在时由 boot 声明）
+ *   无片头时的登录相位
+ *   卸载清理
+ */
+function apply(ctx) {
+  // 客户端重连 / 热重挂载会再次调用 apply：
+  // 重复 register 同一个 slot id 会抛错，抛错之后 550C 面板就注册不上了
+  // —— 表现就是"设置里 550C 那个按键不见了，只能重启找回来" ✗
+  if (dsh550cGet('applied') === true) {
+    console.info('[dsh-550c-boot] apply 已执行过，跳过重复注册')
+    return
+  }
+  dsh550cSet('applied', true)
+
+  installSettingsRows(ctx)
+  installPageClaim(ctx)
+  installLoginWithoutSplash(ctx)
+  installTeardown(ctx)
 }
 
 /**

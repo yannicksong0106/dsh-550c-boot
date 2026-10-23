@@ -27,11 +27,19 @@
   `decodeQrImage(file) → { ok, text } | { ok: false, reason }`，不再直接改组件状态。
 - **常量去重**：曲库容量原来有两个同值常量（各写一遍 `3686 * 1024`，注释还写着 3MB），
   合并成 `BGM_CAP_BYTES`；`BGM_TAIL_MS`、`QR_DECODE_TARGETS`、`SEG_ACTIVE_RULE` 提成具名常量并注明来源。
+- **入口与版本行也拆了**：`apply` 192 → 15 行（设置行 / 页归属 / 无片头登录 / 卸载四个
+  `install*` 函数）；`VersionRow` 170 → 73 行（状态进 `useVersionCheck()`，八种文案进纯函数
+  `versionNote()`，可以直接单测）。
+- **新增「功能清单」断言**：42 项用户可感知的能力（三档片头、Esc 跳过、桌面标题栏、曲库、UEG 三幕、
+  二维码编解码、检查更新…）逐条对应到 bundle 里的符号。重构误删功能会直接红 —— 这张表是这一轮
+  "不许删功能"那条约束的机械版本。
+- **行尾归一**：`rows.js` / `login-css.js` / `login-themes.js` 三个历史遗留的 CRLF 文件统一成 LF，
+  与 `.gitattributes` 的 `eol=lf` 一致（内容零改动，构建输出不变）。
 - **卡片字段由数据驱动**：七个 input 原来各手写一遍，而 `LOGIN_CARD_KEYS` 早就列好了却没人用 ——
   现在由它渲染，加字段只改常量。
 - **片头时长改成"实测回写"**：不再写死 17000。首轮按载体（桌面 / Web）取兜底值，
   播完把真实时长写进 `localStorage`，下一轮直接用。跳过与看门狗不参与回写（否则会越调越早）。
-- **断言补齐**：`scripts/test-host.mjs` 新增 21 条结构断言 —— 死键回来、外壳重新长胖、
+- **断言补齐**：`scripts/test-host.mjs` 新增 31 条结构断言 —— 死键回来、外壳重新长胖、
   拆分被合回去，都会直接红。此前这几处 UI 一条断言都没有。
 - **浏览器套件适配拆分**：`scripts/harness/rows.js` 的 React shim 现在会展开函数组件
   （原来只读 createElement 的原始结果，拆完就看不见子组件里的按钮）。这一条是套件自己抓出来的回归，

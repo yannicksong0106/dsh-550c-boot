@@ -415,5 +415,72 @@ check(
 )
 check('dispatcher routes all three states', CLIENT.includes("if (screen === 'ueg') return mountUegCinema()") && CLIENT.includes("if (screen === 'off') return null"))
 
+// ── 功能清单：结构随便改，功能一个都不许少 ──────────────────────────────────
+// 这张表是"用户可以感知到的能力"的最小索引。重构时最容易出的事故不是语法错，
+// 而是某段代码没人引用了、被顺手删掉，测试又只盯着被改过的地方。
+// 每加一个功能就往这里加一行；删功能必须先删这一行（让 diff 里看得见）。
+console.log('\nfeature manifest')
+
+const FEATURES = [
+  ['片头三档（关闭 / 简易 / 完整）', "MODE_VALUES = ['off', 'simple', 'full']"],
+  ['片头预览按钮', "mountOverlay(true)"],
+  ['Esc 跳过', "event.key === 'Escape'"],
+  ['点击跳过', "host.addEventListener('click', skip)"],
+  ['两段式交接', "dsh550c-out"],
+  ['宿主首帧遮蔽', "__dsh550cFirstFrame"],
+  ['看门狗兜底', 'watchdog fired'],
+  ['桌面标题栏透明', 'dsw-specific-sidebar-fill'],
+  ['全屏让位', 'data-fullscreen'],
+  ['窗口拖拽带', 'dsh550c-dragband'],
+  ['四套配色', "SCHEME_VALUES = ['amber', 'green', 'cyan', 'white']"],
+  ['配色落到 data-scheme', 'host.dataset.scheme'],
+  ['开机音乐导入', 'importBgmFile'],
+  ['曲目试听', 'previewBgm'],
+  ['曲目重命名', 'commitRename'],
+  ['曲目删除', 'removeTrack'],
+  ['音量写入', 'writeBgmVolume'],
+  ['淡出时长写入', 'writeBgmFade'],
+  ['曲库容量上限', 'BGM_CAP_BYTES'],
+  ['曲目列表', 'MusicTrackItem'],
+  ['空库提示', 'MusicEmptyHint'],
+  ['UEG 三幕登录', 'mountUegCinema'],
+  ['终端档五步授权', 'mountTerminalGate'],
+  ['语音播报', 'SpeechSynthesisUtterance'],
+  ['音效合成', 'AudioContext'],
+  ['二维码本地识别', 'decodeQrImage'],
+  ['二维码本地编码', 'makeQrPayload'],
+  ['身份卡七项字段', 'LOGIN_CARD_KEYS'],
+  ['头像缩略存储', "toDataURL('image/jpeg', 0.85)"],
+  ['自动播放开关', 'LOGIN_AUTOPLAYS'],
+  ['配音三档', 'LOGIN_VOICES'],
+  ['登录档位白名单', "LOGIN_VALUES = ['off', 'ueg']"],
+  ['iframe 头像递送', 'ueg:need-photo'],
+  ['iframe 二维码递送', 'ueg:need-qr'],
+  ['550C 设置页声明', 'PANEL_SLOTS'],
+  ['550C 页归属兜底', 'claimSectionIfFree'],
+  ['皮肤推荐行', 'SkinPromoRow'],
+  ['检查更新', 'UPDATE_ROUTE'],
+  ['一键更新', 'APPLY_ROUTE'],
+  ['版本号注入', '__dsh550cVersion'],
+  ['片头结束事件', 'dsh550c:boot-done'],
+  ['登录完成事件', 'dsh550c:login-done'],
+]
+const missing = FEATURES.filter(([, needle]) => !CLIENT.includes(needle))
+check('every feature still exists in the bundle', missing.length === 0, missing.map(([name]) => name).join(', '))
+check('feature manifest is not shrinking', FEATURES.length >= 42, String(FEATURES.length) + ' features tracked')
+
+const applyLines = spanLines(CLIENT, 'function apply(ctx)', 'const bootSplash = mountOverlay(false)')
+check('apply is a 15-line entry point', applyLines < 40, String(applyLines) + ' lines')
+check('settings rows installer exists', CLIENT.includes('function installSettingsRows(ctx)'))
+check('page claim installer exists', CLIENT.includes('function installPageClaim(ctx)'))
+check('login-without-splash installer exists', CLIENT.includes('function installLoginWithoutSplash(ctx)'))
+check('teardown installer exists', CLIENT.includes('function installTeardown(ctx)'))
+const versionRowLines = spanLines(CLIENT, 'function VersionRow()', 'function useVersionCheck(')
+// 90 而不是 60：这一版是纯 createElement 的 markup（没有 JSX），逻辑已经全在 hook 里，
+// 剩下的行数就是「标题 + 描述 + 两个按钮」的字面量。再往上加才说明有人又塞逻辑回来了。
+check('VersionRow shell stays markup-only (under 90)', versionRowLines < 90, String(versionRowLines) + ' lines')
+check('version note is a pure function', CLIENT.includes('function versionNote(view)'))
+check('version row state lives in a hook', CLIENT.includes('function useVersionCheck()'))
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1
