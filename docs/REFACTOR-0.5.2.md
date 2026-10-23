@@ -83,7 +83,7 @@
 | 注释 | 把"3MB"的推导按 3.6MB 重写，只留一处 |
 | 组件 | MusicRow（295 行）→ 外壳 + MusicToggle + MusicTransport + MusicLibrary + MusicTrackItem + MusicEmptyHint；状态留在外壳，props 下发 |
 
-**行为等价清单**：导入 → 首次导入自动开启 → 试听/停止 → 重命名（Enter / blur 提交）→ 删除（二次确认）→ 设为开机 → 空库提示 → 容量显示。
+**行为等价清单**：导入 → 首次导入自动开启 → 试听/停止 → 重命名（Enter 或失焦提交；原实现**没有** Esc 取消，本轮也不加）→ 删除（二次确认）→ 设为开机 → 空库提示 → 容量显示。
 
 ### S4 · login.js：LoginRow 拆分 + 二维码抽离（P1）
 

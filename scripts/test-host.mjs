@@ -375,5 +375,24 @@ check('page claim uses the single skin check', claimRegion.includes('if (dsh550c
 check('page claim retry timer is owned by the plugin', claimRegion.includes('claimRetry') && claimRegion.includes('clearInterval(claimRetry)'))
 check('splash duration is measured, not hardcoded', claimRegion.includes('readSplashMs(mode)') && claimRegion.includes('rememberSplashMs(mode'))
 
+// ── 组件预算：拆开的壳不许再长回去 ──────────────────────────────────────────
+// 巨型函数是这轮的主要债务。断言行数不是为了"好看"：外壳一旦重新长到 200 行，
+// 说明写的人又把业务塞回渲染函数里了，下一次改动就得再读两百行。
+console.log('\ncomponent budgets')
+
+/** 量一段源码的行数（从 from 到 to，不含 to 之后）。 */
+const spanLines = (text, from, to) => {
+  const start = text.indexOf(from)
+  const end = text.indexOf(to, start + 1)
+  if (start < 0 || end < 0) throw new Error('cannot measure ' + from + ' .. ' + to)
+  return text.slice(start, end).split('\n').length
+}
+
+const musicRowLines = spanLines(CLIENT, 'function MusicRow()', 'function MusicToggle(')
+check('MusicRow shell stays under 160 lines', musicRowLines < 160, String(musicRowLines) + ' lines')
+for (const part of ['function MusicToggle(', 'function MusicTransport(', 'function MusicLibrary(', 'function MusicTrackItem(', 'function MusicEmptyHint(']) {
+  check('music block is split: ' + part.trim(), CLIENT.includes(part))
+}
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1
