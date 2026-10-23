@@ -1,126 +1,48 @@
 /**
- * 登录相位的编排：五步授权 → 打字机 → 逐句配音 → 收尾。
+ * 登录相位的调度与终端档实现。
  *
- * 整个函数是一个闭包（19 个内部函数共享 ui / record / timers 等状态），
- * 拆开它们只会把状态搬来搬去、风险高收益低 —— 所以【整体】挪到本文件，
- * 让 login.js 只留设置行的部分。
+ *   mountLoginGate(force)   调度器：ueg → src/login-ueg.js，off → 不放，其余 → 终端档
+ *   mountTerminalGate(s)    终端档：五步授权 → 打字机 → 逐句配音 → 收尾
+ *
+ * 两条实现没有任何共享状态，所以 UEG 那条搬进了独立文件 —— 这个文件原来
+ * 450 行里有一半是 iframe 与 postMessage，跟终端档的五步时间轴混在一起，
+ * 想改其中一条得先读完另一条。
+ *
+ * 终端档本身仍是一个闭包（时间轴 / 打字机 / 配音 / 清理共享同一批状态）：
+ * 硬拆成"状态机"只会把状态搬来搬去，风险远大于收益 —— 本轮只挪位置，逻辑一行未改。
  *
  * 注意：本文件会被 build.mjs 拼进一个模板字符串里，
  * 所以【绝对不能出现反引号或美元加大括号】。
  */
 
+/** 归一化档位 → 收掉上一条 → 分派；语义见文件头。 */
 function mountLoginGate(force) {
-  // 自动相位（force 为 null）只放一次：放完后 liveLogin 仍指向那条记录，
-  // 下一次相位钩子就直接早退 —— 否则会再挂一个新的 iframe，动画播完又从头开始，
-  // 表现就是"进不去对话页、动画重播"。「预览」是用户主动点的（force 有值），
-  // 所以先把旧的那条收掉，再放一遍。
   if (liveLogin !== null) {
     if ((force ?? null) === null) return liveLogin
-    try { liveLogin.dispose() } catch { /* 已经收掉了 */ }
+    try {
+      liveLogin.dispose()
+    } catch (error) {
+      /* 已经收掉了 */
+    }
     liveLogin = null
   }
 
-  // ── UEG 档：播放我们做的三幕登入动画（新增内容）─────────────────────────
-  // 它是自包含的一页（/ueg/，由宿主以同源 iframe 提供：自己的 style/script/canvas/音频）。
-  // 这里只做"这一档走那条路"的短路 —— 550C 档与片头动画一律不动。
-  if ((force ?? readLoginScreen()) === 'ueg') {
-    const frame = document.createElement('div')
-    frame.className = 'dsh550c-ueg-cinema'
-    // 让窗口右上角那三个原生按钮也「浮」在这次动画上 —— 和片头用的是同一套：
-    // adaptCaption 会注入一段 CSS 把 DSH 的探针 span 背景改成 transparent，
-    // Desktop 的 preload 重新测量后经 IPC 把 titleBarOverlay 也设成透明。
-    // 浏览器标签里没有 data-platform，这个调用天然是 no-op。
-    let captionDispose = null
-    try {
-      if (typeof adaptCaption === 'function') captionDispose = adaptCaption(document.body)
-    } catch (error) {
-      console.error('[dsh-550c-boot] caption adapt failed', error)
-    }
-    frame.style.cssText =
-      'position:fixed;inset:0;z-index:2147483000;background:#05060a;opacity:1;transition:opacity 650ms ease'
-    const inner = document.createElement('iframe')
-    // 把设置里的 DIY 项与配音一起带进动画页：姓名、头像、男声/女声、或关闭配音
-    const params = new URLSearchParams()
-    const operator = readLoginPref(LOGIN_USER_KEY, '')
-    const avatar = readLoginPref(LOGIN_PHOTO_KEY, '')
-    const voiceChoice = readLoginPref(LOGIN_VOICE_KEY, 'off')
-    if (operator !== '') params.set('name', operator)
-    // 头像【绝不放进 query】：base64 太长会把 URL 撑爆 —— 实测直接 431（请求头过大），
-    // iframe 就加载失败，表现正是"进得去网页、打不开 DSH"。
-    // 动画页改成自己从 localStorage 读那张图（同源，读得到）。
-    for (const [key] of LOGIN_CARD_KEYS) {
-      const value = readLoginPref(LOGIN_CARD_KEY(key), '')
-      if (value !== '') params.set(key, value)
-    }
-    if (readLoginPref(LOGIN_AUTOPLAY_KEY, 'on') === 'off') params.set('auto', '0')
-    if (voiceChoice === 'off') params.set('audio', '0')
-    else params.set('voice', voiceChoice)
-    inner.src = '/ueg/' + (params.size === 0 ? '' : '?' + params.toString())   // 同上
-    // 动画页画出来之后再撤退宿主的首帧黑帧 —— 这样从开机到 UEG 第一帧没有空档。
-    inner.addEventListener('load', () => {
-      // 头像主动推一次：桌面端 iframe 读不到 localStorage（主窗口被宿主代理接管了），
-      // 只能由父页递进去；iframe 自己也会发 ueg:need-photo 来要，两条路都通。
-      try {
-        const photoNow = readLoginPref(LOGIN_PHOTO_KEY, '')
-        if (photoNow !== '') inner.contentWindow.postMessage({ type: 'ueg:photo', photo: photoNow }, '*')
-
-// 二维码同理：动画页自己会读 localStorage，但桌面端 iframe 读不到代理层，
-// 所以父页主动递一次；动画页发 ueg:need-qr 时再补一次。
-const qrNow = readLoginPref('dsh-550c-boot:login-qr', '')
-if (qrNow !== '') inner.contentWindow.postMessage({ type: 'ueg:qr', qr: qrNow }, '*')
-      } catch { /* 窗口还没就绪，等它来要 */ }
-      try {
-        if (typeof endFirstFrame === 'function') endFirstFrame()
-      } catch (error) {
-        console.error('[dsh-550c-boot] first-frame retire failed', error)
-      }
-    }, { once: true })
-    inner.setAttribute('title', 'UEG 访问终端')
-    inner.style.cssText = 'width:100%;height:100%;border:0;display:block'
-    frame.appendChild(inner)
-    document.body.appendChild(frame)
-
-    const dismiss = () => {
-      if (captionDispose !== null) {
-        try { captionDispose() } catch { /* 已经收掉了 */ }
-        captionDispose = null
-      }
-      window.removeEventListener('message', onMessage)
-      frame.style.opacity = '0'
-      window.setTimeout(() => frame.remove(), 700)
-      // 这里【刻意不清空 liveLogin】：清空会让下一次相位钩子再挂一个新 iframe，
-      // 动画就从头重播。保留记录 = 已放完，后续钩子一律早退。
-    }
-    const onMessage = (event) => {
-      if (event.source !== inner.contentWindow) return
-      if (event.data === 'ueg:done') { dismiss(); return }
-      // 桌面端（DSH Desktop）把主窗口的 localStorage 换成了宿主存储代理，
-      // iframe 是独立 realm，拿不到那层覆写 —— 读原生存储是空的，头像就永远是占位符。
-      // 所以头像既不塞 URL（base64 会撞 431），也不指望 localStorage，改由这里递进去。
-      if (event.data === 'ueg:need-qr') {
-  let qrPayload = ''
-  try { qrPayload = readLoginPref('dsh-550c-boot:login-qr', '') } catch { qrPayload = '' }
-  try { inner.contentWindow.postMessage({ type: 'ueg:qr', qr: qrPayload }, '*') } catch { /* 窗口已关闭 */ }
-  return
-}
-if (event.data === 'ueg:need-photo') {
-        let photo = ''
-        try { photo = readLoginPref(LOGIN_PHOTO_KEY, '') } catch { photo = '' }
-        if (photo !== '') {
-          try { inner.contentWindow.postMessage({ type: 'ueg:photo', photo: photo }, '*') } catch { /* 窗口已关闭 */ }
-        }
-      }
-    }
-    const record = { dispose: dismiss, dismiss }
-    window.addEventListener('message', onMessage)
-    liveLogin = record
-    return record
-  }
-
   const screen = force ?? readLoginScreen()
+  if (screen === 'ueg') return mountUegCinema()
   if (screen === 'off') return null
+  return mountTerminalGate(screen)
+}
 
+/**
+ * 终端档：五步授权（洗白 → 擦出 → 五步 → 色散）。
+ *
+ * 这里是一个闭包：时间轴、打字机、配音、清理共享同一批状态，
+ * 硬拆成"状态机"只会把状态搬来搬去，风险远大于收益 —— 本轮只把它从
+ * mountLoginGate 里挪出来，逻辑一行未改。
+ */
+function mountTerminalGate(screen) {
   ensureLoginSheet()
+
 
   const schemeId = readScheme()
   const theme = loginTheme(screen, schemeId)

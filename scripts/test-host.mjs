@@ -405,5 +405,15 @@ check(
   CLIENT.includes('for (const field of LOGIN_CARD_KEYS)') && CLIENT.includes('readLoginPref(LOGIN_CARD_KEY(name),'),
 )
 
+const dispatchLines = spanLines(CLIENT, 'function mountLoginGate(force)', 'function mountTerminalGate(screen)')
+check('mountLoginGate is a dispatcher, not the whole phase', dispatchLines < 60, String(dispatchLines) + ' lines')
+check('terminal phase has its own entry', CLIENT.includes('function mountTerminalGate(screen)'))
+check('ueg phase lives in its own region', CLIENT.includes('//#region src/login-ueg.js') && CLIENT.includes('function mountUegCinema()'))
+check(
+  'ueg region comes before the gate region',
+  CLIENT.indexOf('//#region src/login-ueg.js') < CLIENT.indexOf('//#region src/login-gate.js'),
+)
+check('dispatcher routes all three states', CLIENT.includes("if (screen === 'ueg') return mountUegCinema()") && CLIENT.includes("if (screen === 'off') return null"))
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1
