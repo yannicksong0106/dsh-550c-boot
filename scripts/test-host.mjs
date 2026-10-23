@@ -331,5 +331,49 @@ console.log('\nplugin wiring')
 // (scripts/harness/rows.js + the "settings rows · rendered text" case): they live in
 // the client bundle, which only runs inside a page.
 
+// ── 客户端 bundle 的结构断言 ────────────────────────────────────────────────
+// 这些不是"风格检查"，是三条真 bug 的看门人：
+//   ① 有个页面归属旗子从来没人写入，却有两处代码拿它做判断（默认页签 / 页归属）
+//   ② 归属定时器没有清理路径，插件禁用后还在跑
+//   ③ 皮肤判定散在三个地方，各自读不同的键
+// 结构一退回去，这里立刻红。
+console.log('\nbundle structure')
+
+const CLIENT = readFileSync(resolve(here, '../lib/client.js'), 'utf8')
+/** 按 //#region <file> 切出一段源码在 bundle 里的样子；缺文件直接抛。 */
+const regionOf = (name) => {
+  const marker = '//#region ' + name
+  const start = CLIENT.indexOf(marker)
+  if (start < 0) throw new Error('bundle is missing region ' + name)
+  const end = CLIENT.indexOf('//#endregion', start)
+  if (end < 0) throw new Error('bundle region ' + name + ' is not closed')
+  return CLIENT.slice(start, end)
+}
+
+check('bundle has the state module', CLIENT.includes('//#region src/state.js'))
+check('state module declares the single skin check', regionOf('src/state.js').includes('function dsh550cSkinInstalled'))
+check(
+  'dead page-owner key is gone',
+  !CLIENT.includes('__dsh550cPageOwner'),
+  'still referenced somewhere in the bundle',
+)
+for (const retired of ['__dsh550cApplied', '__dsh550cBootPage', '__dsh550cRowsOnSeries', '__dsh550cSplashPlayed']) {
+  check('retired global is gone: ' + retired, !CLIENT.includes(retired))
+}
+check('state root exists', CLIENT.includes('__dsh550cState'))
+check(
+  'state module comes first',
+  CLIENT.indexOf('//#region src/state.js') < CLIENT.indexOf('//#region src/panel.js') &&
+    CLIENT.indexOf('//#region src/state.js') < CLIENT.indexOf('//#region src/client.js'),
+)
+check(
+  'panel default tab asks the state module',
+  regionOf('src/panel.js').includes('dsh550cSkinInstalled()') && !regionOf('src/panel.js').includes('__dsh550c'),
+)
+const claimRegion = regionOf('src/client.js')
+check('page claim uses the single skin check', claimRegion.includes('if (dsh550cSkinInstalled()) return'))
+check('page claim retry timer is owned by the plugin', claimRegion.includes('claimRetry') && claimRegion.includes('clearInterval(claimRetry)'))
+check('splash duration is measured, not hardcoded', claimRegion.includes('readSplashMs(mode)') && claimRegion.includes('rememberSplashMs(mode'))
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1

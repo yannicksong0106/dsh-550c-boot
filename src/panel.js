@@ -27,6 +27,19 @@ const PANEL_SLOTS = {
   'settings.550c.anim.ueg': { kind: 'list', scope: 'root' },
 }
 
+/**
+ * 默认停在哪个页签：有内容的那一页。
+ *
+ * 「外观」页由皮肤填充 —— 皮肤不在场时它是白板（实测：打开设置就看到空页），
+ * 所以那时候落在「550C 开机动画」。
+ *
+ * 判定必须走 dsh550cSkinInstalled()：这里曾经自己读一个没人写入的页面归属旗子，
+ * 于是判断永远为假 —— "按皮肤状态选默认页签" 等于没做。
+ */
+function defaultPanelTab() {
+  return dsh550cSkinInstalled() ? 'look' : 'boot550c'
+}
+
 /** 页壳：顶部是灵动岛式胶囊筛选条（吸顶），下面是框住内容的卡片。 */
 function Panel550c(props) {
   // 设置行的整套样式（.dsh550c-row / -input / -seg / -preview …）必须在这里注入：
@@ -34,9 +47,7 @@ function Panel550c(props) {
   // 整行退回浏览器默认样式 —— 输入框是 inline-block，按宽度自动流排，看起来就像挤成三列。
   // 放到页壳上：进 550C 页的第一帧就有样式，先点哪个 tab 都一样。
   ensureRowStyle()
-  // 默认落在有内容的页签：
-// 「外观」是皮肤填的，皮肤没启用时那一页是空的（实测：打开设置就看到白板）✗
-const [tab, setTab] = React.useState(window.__dsh550cPageOwner === true ? 'look' : 'boot550c')
+  const [tab, setTab] = React.useState(defaultPanelTab)
   const active = PANEL_TABS.find((item) => item.id === tab) ?? PANEL_TABS[0]
   return React.createElement(
     'div',

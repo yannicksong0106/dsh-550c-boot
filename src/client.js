@@ -38,6 +38,56 @@ const ROW_STYLE_ID = 'dsh-550c-boot-row-style'
 const FIRST_FRAME_GLOBAL = '__dsh550cFirstFrame'
 /** The host half's injected version (see lib/index.js VERSION_GLOBAL). */
 const VERSION_GLOBAL = '__dsh550cVersion'
+
+/**
+ * 片头时长的兜底值（毫秒）。这两个数不是拍的，也不是"哪个环境都能用"：
+ *
+ *   完整档  Web 端实测 14010ms、桌面端 17000ms
+ *           （同一个 bundle、同一份 CSS；差在窗口合成开销与 preload 的标题栏重测）
+ *   简易档  两端都约 3590ms（实测 3587）
+ *
+ * 所以常量只当兜底：先按 dataset.platform 选载体，首次播完再把实测值写进
+ * localStorage，下次直接用实测值 —— 写死一边必然另一边偏（0.5.1 的教训）。
+ */
+const SPLASH_MS = {
+  simple: { web: 3590, desktop: 3590 },
+  full: { web: 14010, desktop: 17000 },
+}
+/** 实测时长的存储键前缀；完整键名 = 前缀 + 档位。 */
+const SPLASH_MS_KEY_PREFIX = 'dsh-550c-boot:splash-ms:'
+/** 只接受这个区间内的实测值：太小是跳过/异常，太大是看门狗，都不是"播完"。 */
+const SPLASH_MS_MIN = 1000
+const SPLASH_MS_MAX = 60000
+
+/** 桌面端才有 data-platform（Electron preload 写的），浏览器标签里没有。 */
+function meteredSplashMsDesktop() {
+  const platform = document.documentElement.dataset.platform
+  return platform !== undefined && platform !== ''
+}
+
+/** 读片头时长：上一轮实测 > 载体兜底。 */
+function readSplashMs(mode) {
+  const key = SPLASH_MS_KEY_PREFIX + (mode === 'full' ? 'full' : 'simple')
+  try {
+    const parsed = Number(window.localStorage.getItem(key))
+    if (Number.isFinite(parsed) && parsed >= SPLASH_MS_MIN && parsed <= SPLASH_MS_MAX) return parsed
+  } catch (error) {
+    /* private mode：读不到就用兜底 */
+  }
+  const table = SPLASH_MS[mode] === undefined ? SPLASH_MS.simple : SPLASH_MS[mode]
+  return meteredSplashMsDesktop() ? table.desktop : table.web
+}
+
+/** 写片头时长：只写合理值，写不进去就算了（下一轮继续用兜底）。 */
+function rememberSplashMs(mode, measured) {
+  if (!(Number.isFinite(measured) && measured >= SPLASH_MS_MIN && measured <= SPLASH_MS_MAX)) return
+  const key = SPLASH_MS_KEY_PREFIX + (mode === 'full' ? 'full' : 'simple')
+  try {
+    window.localStorage.setItem(key, String(Math.round(measured)))
+  } catch (error) {
+    /* private mode：这次学到的东西不留下来 */
+  }
+}
 /** The host half's update routes (see lib/index.js UPDATE_ROUTE / APPLY_ROUTE). */
 const UPDATE_ROUTE = '/dsh-550c-boot/update'
 const APPLY_ROUTE = '/dsh-550c-boot/update/apply'
@@ -368,8 +418,8 @@ function mountOverlay(force) {
   // 非 force（自动播放）时每个文档只放一次：
   // 思考/流式输出期间客户端会重渲染，原来每次都会把片头重新拉起来 ✗
   if (force !== true) {
-    if (window.__dsh550cSplashPlayed === true) return null
-    window.__dsh550cSplashPlayed = true
+    if (dsh550cGet('splashPlayed') === true) return null
+    dsh550cSet('splashPlayed', true)
   }
   if (liveOverlay !== null) return liveOverlay
 
@@ -417,7 +467,7 @@ function mountOverlay(force) {
   // Above the overlay, so the window can still be dragged by its title strip.
   document.body.appendChild(dragBand)
 
-  const record = { host: host, dragBand: dragBand, show: null, enhance: null, caption: null, finished: false, fadeTimer: null, watchdog: null, dispose: null }
+  const record = { host: host, dragBand: dragBand, show: null, enhance: null, caption: null, finished: false, fadeTimer: null, watchdog: null, dispose: null, startedAt: 0 }
 
   const skip = () => {
     if (record.show !== null) record.show.cancel()
@@ -441,9 +491,14 @@ function mountOverlay(force) {
     // announces the hand-off, so a separately installed login plugin can take over.
     if (!pluginTornDown) startLoginPhase()
   }
-  const finish = () => {
+  const finish = (reason) => {
     if (record.finished) return
     record.finished = true
+    // 只有"片子自己播完"才是有效样本：跳过、看门狗、启动异常都会让间隔变短，
+    // 拿它们回写只会让下一轮的淡出排程一次比一次早。
+    if (reason === 'played' && record.startedAt > 0) {
+      rememberSplashMs(mode, performance.now() - record.startedAt)
+    }
     if (record.watchdog !== null) {
       window.clearTimeout(record.watchdog)
       record.watchdog = null
@@ -500,11 +555,12 @@ function mountOverlay(force) {
     window.addEventListener('keydown', onKey, true)
     // 开机音乐：只配 550C 片头，UEG 档不配（见上面）。
     startBootMusic()
-    // 片头总时长用实测值，淡出提前 fadeMs 开始，收尾落在画面结束后 0.5 秒
-    // 实测值（浏览器打点 2026-10-22）：简易档 3587ms、完整档 14010ms
-    // 从 overlay 出现到 dsh550c-out 的真实间隔，不是文案里的估值
-    scheduleBootFade(mode === 'simple' ? 3590 : 17000)
-    record.show.start().then(finish, finish)
+    // 片头总时长 = 上一轮实测（没有就按载体兜底，见 SPLASH_MS）。
+    // 淡出按它提前排程，收尾落在画面结束后 0.5 秒。
+    record.startedAt = performance.now()
+    scheduleBootFade(readSplashMs(mode))
+    // 第一个回调 = 播完（可回写时长），第二个 = 被跳过/取消（不回写）。
+    record.show.start().then(() => finish('played'), () => finish('skipped'))
     // Last statement of the same task that put the overlay on screen: the host
     // half's first frame and this shadow root swap inside one paint.
     if (!uegOwnsFirstFrame) endFirstFrame()
@@ -519,34 +575,14 @@ function mountOverlay(force) {
 
 /**
  * 推荐行：只在没装 dsh-550c-skin 时出现。
- * 判定用 skin 自己插的旗子 __dsh550cPageOwner。装了皮肤这行自动消失。
+ *
+ * 判定走 state.js 的 dsh550cSkinInstalled()。这里曾经挂过一个 1.2 秒的轮询，
+ * 理由是"window 上的旗子变了 React 不会重渲染" —— 但那个版本号是皮肤的宿主半边
+ * 在 index-inject 阶段一次性注入的，页面生命周期里根本不会变，轮询纯属白烧 CPU。
+ * 读一次就够；真要让它在运行时复活，那也得等插件启停机制先能热加载。
  */
-/** 皮肤在不在：skin 加载时会写 __dsh550cSkinVersion（见 dsh-550c-skin/src/client.js）。 */
-function __skinInstalled() {
-  try {
-    return typeof window !== "undefined" && (
-      window.__dsh550cSkinVersion !== undefined || window.__dsh550cPageOwner === true
-    )
-  } catch (error) {
-    return false
-  }
-}
-
 function SkinPromoRow() {
-  // window 上的旗子变了 React 不会重渲染 ✗，所以自己定时自检：
-  // 皮肤一启用，这一行在 1.2 秒内自己消失 ✓
-  const [installed, setInstalled] = React.useState(
-    typeof window !== "undefined" && __skinInstalled(),
-  )
-  React.useEffect(() => {
-    const check = () => {
-      const now = typeof window !== "undefined" && __skinInstalled()
-      setInstalled((prev) => (prev === now ? prev : now))
-    }
-    check()
-    const timer = window.setInterval(check, 1200)
-    return () => window.clearInterval(timer)
-  }, [])
+  const [installed] = React.useState(dsh550cSkinInstalled)
   if (installed) return null
   return React.createElement("div", { className: "dsh550c-row" },
     React.createElement("div", { className: "dsh550c-row-text" },
@@ -567,11 +603,11 @@ function apply(ctx) {
   // 客户端重连 / 热重挂载会再次调用 apply：
   // 重复 register 同一个 slot id 会抛错，抛错之后 550C 面板就注册不上了
   // —— 表现就是"设置里 550C 那个按键不见了，只能重启找回来" ✗
-  if (window.__dsh550cApplied === true) {
+  if (dsh550cGet('applied') === true) {
     console.info('[dsh-550c-boot] apply 已执行过，跳过重复注册')
     return
   }
-  window.__dsh550cApplied = true
+  dsh550cSet('applied', true)
   // The settings rows are ordinary slot contributions: they belong to a panel
   // and should live and die with it.
   //
@@ -641,9 +677,9 @@ function apply(ctx) {
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-scheme', order: 60 }, SchemeRow),
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-music', order: 70 }, MusicRow),
       ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-update', order: 80 }, VersionRow),
-    ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-skin-promo', order: 85 }, SkinPromoRow),
-    // 「外观」页是皮肤的地盘；皮肤不在时放一行推荐，免得整页空白 ✗
-    ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-skin-promo-look', order: 10 }, SkinPromoRow),
+      ctx.slots.register({ name: 'settings.550c.anim.550c', id: 'boot-550c-skin-promo', order: 85 }, SkinPromoRow),
+      // 「外观」页是皮肤的地盘；皮肤不在时放一行推荐，免得整页空白 ✗
+      ctx.slots.register({ name: 'settings.550c.item', id: 'boot-550c-skin-promo-look', order: 10 }, SkinPromoRow),
       ctx.slots.register({ name: 'settings.550c.anim.ueg', id: 'boot-550c-login', order: 80 }, LoginRow),
     ]
     onSeries = () => {
@@ -651,36 +687,56 @@ function apply(ctx) {
     }
   }
 
-    // 「550C」页由本插件提供：skin 不在时也不会缺页（系列共用同一个入口）。
-    // 系列约定：skin 在场时「550C」页归它（它会先插旗），boot 直接让位；
-    // 推到微任务执行，才来得及看到同一轮里 skin 插的旗子。
-    // 注意：不能用模板字符串（build 会把 src/*.js 插进模板字符串）。
-    // 页面归谁：skin 在就归 skin，skin 走了 boot 顶上。
-    // 不能只判断一次 —— skin 可能在运行时被禁用，它的注册会随之撤销，
-    // 那时页面就空了（实测：两个都开时关掉 skin，550C 这一页会消失）。
-    // 所以这里持续确认：旗子不在就注册一次，注册过就不再重复。
-    // 注意：不能用模板字符串，build 会把 src/*.js 插进模板字符串。
-    function claimSectionIfFree() {
-      if (window.__dsh550cPageOwner) return
-      if (window.__dsh550cBootPage === true) return
-      window.__dsh550cBootPage = true
-      ctx.slots.inject('settings.section', () =>
-        ctx.slots.register(
-          {
-            name: 'settings.section',
-            id: '550c',
-            order: 30,
-            label: () => '550C',
-            // 子插槽的声明只在 src/panel.js 里写一次，这里只引用 ——
-            // 以后加新动画时不会再出现"页面声明了、行注册的地方忘了改"的崩。
-            children: Object.assign({}, PANEL_SLOTS),
-          },
-          Panel550c,
-        ),
-      )
+  // 「550C」页归谁：皮肤在场就归皮肤，皮肤不在 boot 顶上（系列共用同一个入口）。
+  //
+  // 不能只判断一次：skin 可能在运行时被禁用，它的注册随之撤销，那一页就空了
+  // （实测：两个都开时关掉 skin，550C 这一页会消失）。所以隔一会儿再确认一次。
+  //
+  // 但确认必须收着做 —— 这里原来是一个永不清理的 setInterval(1500)，
+  // 插件被禁用之后它还在跑，一边跑一边往 window 上写旗子。
+  // 现在：确认成功就停，插件卸载时也停。
+  let claimTimer = null
+  const stopClaimTimer = () => {
+    if (claimTimer === null) return
+    window.clearTimeout(claimTimer)
+    claimTimer = null
+  }
+  function claimSectionIfFree() {
+    // 皮肤在场：页面归它，boot 不抢。这是唯一正确的判据 ——
+    // 原来那行判的是一个没人写入的死键（早期版本的页面归属旗子）。
+    if (dsh550cSkinInstalled()) return
+    if (dsh550cGet('bootPageOwned') === true) {
+      stopClaimTimer()
+      return
     }
-    window.setTimeout(claimSectionIfFree, 0)
-    window.setInterval(claimSectionIfFree, 1500)
+    dsh550cSet('bootPageOwned', true)
+    stopClaimTimer()
+    ctx.slots.inject('settings.section', () =>
+      ctx.slots.register(
+        {
+          name: 'settings.section',
+          id: '550c',
+          order: 30,
+          label: () => '550C',
+          // 子插槽的声明只在 src/panel.js 里写一次，这里只引用 ——
+          // 以后加新动画时不会再出现"页面声明了、行注册的地方忘了改"的崩。
+          children: Object.assign({}, PANEL_SLOTS),
+        },
+        Panel550c,
+      ),
+    )
+  }
+  claimTimer = window.setTimeout(claimSectionIfFree, 0)
+  // 皮肤被运行期禁用时，页面归 boot —— 这是一次兜底确认，不是常驻轮询：
+  // 归属一旦落定就停，插件卸载时也停。
+  const claimRetry = window.setInterval(() => {
+    if (dsh550cGet('bootPageOwned') === true || dsh550cSkinInstalled()) stopClaimTimer()
+    else claimSectionIfFree()
+  }, 1500)
+  ctx.effect(() => () => {
+    stopClaimTimer()
+    window.clearInterval(claimRetry)
+  }, 'dsh-550c-boot: 550C page claim guard')
 
     ctx.slots.inject('settings.550c.item', () => {
     // The page wins. Drop the General placement first, or the same three rows
@@ -748,14 +804,14 @@ function apply(ctx) {
  * effect, so disabling the plugin removes whatever this started.
  */
 const bootSplash = mountOverlay(false)
-  // 互斥：UEG 档自带完整的三幕片头，所以 UEG 开着就别再播 550C 片头 ——
-  // 两者都开会先播 16 秒片头、再播 UEG 三幕，等于两段片头。
-  // 注意 bootSplash 是 const，只调 dispose()、不重新赋值。
-  try {
-    if (bootSplash !== null && typeof readLoginScreen === 'function' && readLoginScreen() === 'ueg') bootSplash.dispose()
-  } catch (error) {
-    console.error('[dsh-550c-boot] splash exclusion failed', error)
-  }
+// 互斥：UEG 档自带完整的三幕片头，所以 UEG 开着就别再播 550C 片头 ——
+// 两者都开会先播 17 秒片头、再播 UEG 三幕，等于两段片头。
+// 注意 bootSplash 是 const，只调 dispose()、不重新赋值。
+try {
+  if (bootSplash !== null && typeof readLoginScreen === 'function' && readLoginScreen() === 'ueg') bootSplash.dispose()
+} catch (error) {
+  console.error('[dsh-550c-boot] splash exclusion failed', error)
+}
 
 exports.name = 'boot-550c'
 exports.inject = ['slots']
