@@ -45,6 +45,32 @@
     return out
   }
 
+  /**
+   * 把函数组件就地展开成宿主元素树。
+   *
+   * 设置行已经拆成多个子组件（外壳 + 胶囊 + 字段…）。这个 shim 不做 React 调和，
+   * 只读 createElement 的原始结果 —— 子组件对它是"函数"，里面的按钮和文案全都读不到。
+   * 以前一行就是一个函数，所以碰巧能读；拆分之后必须先展开。
+   *
+   * 边界：最多 16 层（防止组件互相递归）；hooks 用外面那套假实现，
+   * 展开顺序必须稳定 —— 和 React 对 hook 顺序的要求本来就一致。
+   */
+  function expand(node, depth) {
+    var level = depth === undefined ? 0 : depth
+    if (level > 16) return node
+    if (node === null || typeof node !== 'object') return node
+    if (Array.isArray(node)) {
+      return node.map(function (child) {
+        return expand(child, level + 1)
+      })
+    }
+    if (typeof node.type === 'function') {
+      return expand(node.type(node.props || {}), level + 1)
+    }
+    if (node.children === undefined) return node
+    return { type: node.type, props: node.props, children: expand(node.children, level + 1) }
+  }
+
   function describe(tree) {
     var note = findByClass(tree, 'dsh550c-note')
     var desc = findByClass(tree, 'dsh550c-row-desc')
@@ -125,7 +151,7 @@
             cursor = 0
             React.useState = patched
             try {
-              return Component()
+              return expand(Component())
             } finally {
               React.useState = realUseState
             }

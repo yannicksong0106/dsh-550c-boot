@@ -178,6 +178,15 @@ let loginPhaseDone = false
 /** 页面顶部可选的分组：以后再加启动动画，就往这里加一项 + 一个插槽。 */
 
 
+/**
+ * jsQR 的多尺度重试目标（长边像素）。
+ *
+ * 为什么要试这么多档：同一张微信二维码，原尺寸（968×1433）解不出，
+ * 缩到约 900px 才成功；太小的图又需要放大。命中即止，最后再补一次原尺寸。
+ * 删档之前先拿真图各试一遍 —— 这几个数是实测出来的，不是凑的。
+ */
+const QR_DECODE_TARGETS = [900, 700, 1100, 1400]
+
 /** 头像控件插在哪个字段之后（保持原来的视觉顺序：姓名 → 拼音 → 职务 → 头像）。 */
 const CARD_PHOTO_AFTER = 'post'
 
@@ -207,7 +216,7 @@ async function decodeQrImage(file) {
     })
     // jsQR 对图片尺寸很敏感：按几个不同的长边尺寸各试一次，命中即止；都不行再提示。
     const longSide = Math.max(image.width, image.height)
-    const targets = [900, 700, 1100, 1400, longSide]
+    const targets = QR_DECODE_TARGETS.concat([longSide])
     for (const target of targets) {
       const scale = Math.min(3, target / longSide)
       const w = Math.max(1, Math.round(image.width * scale))

@@ -4,7 +4,38 @@
 
 ## [0.5.2] - 2026-10-23
 
-设置页的两个可见问题，加上一个推荐位。
+这一版的主线是**代码结构**：把散在 `window` 上的临时全局收进一个状态对象、把五个巨型函数拆开、
+让"皮肤在不在"只剩一个判定入口。顺手修掉三个一直没人看见的真 bug，其中两个是 0.5.2 自己声称修过、
+实际没生效的。
+
+行为不变 —— 除了下面明确列出的三条修复，其余都是原样搬迁。
+
+### 代码结构
+
+- **共享状态收口**：新增 `src/state.js`。十个 `window.__dsh550c*` 旗子合并成一个状态对象
+  （`dsh550cGet` / `dsh550cSet`），键名集中登记；"皮肤在不在"只剩一个入口
+  `dsh550cSkinInstalled()`，默认页签、推荐行、页面归属三处共用它。
+  皮肤侧无需改动 —— 它的宿主半边注入的版本号本来就是唯一事实来源。
+- **三处巨型函数拆开**（MAINTENANCE 列的五个里挑的三个；`createShow` 与 `verify.mjs` 按下述理由不动）：
+  - `MusicRow` 295 → 50 行：状态与写入口抽成 `useMusicLibrary()`，界面拆成
+    `MusicToggle` / `MusicTransport` / `MusicLibrary` / `MusicTrackItem` / `MusicEmptyHint`。
+  - `LoginRow` 340 → 53 行：拆成 `ScreenModeRow` / `AutoplayRow` / `VoiceRow` / `QrRow` / `CardFields`。
+  - `mountLoginGate` 450 → 25 行：UEG 那条路（iframe + postMessage）搬进新文件
+    `src/login-ueg.js`，终端档改名 `mountTerminalGate()`，`mountLoginGate` 只负责分派。
+  - `createShow`（573 行）**不动**：它是 550C 原稿的逐字移植，拆了没法合上游更新。
+- **可单测的抽离**：二维码多尺度识别从组件里拿出来，变成
+  `decodeQrImage(file) → { ok, text } | { ok: false, reason }`，不再直接改组件状态。
+- **常量去重**：曲库容量原来有两个同值常量（各写一遍 `3686 * 1024`，注释还写着 3MB），
+  合并成 `BGM_CAP_BYTES`；`BGM_TAIL_MS`、`QR_DECODE_TARGETS`、`SEG_ACTIVE_RULE` 提成具名常量并注明来源。
+- **卡片字段由数据驱动**：七个 input 原来各手写一遍，而 `LOGIN_CARD_KEYS` 早就列好了却没人用 ——
+  现在由它渲染，加字段只改常量。
+- **片头时长改成"实测回写"**：不再写死 17000。首轮按载体（桌面 / Web）取兜底值，
+  播完把真实时长写进 `localStorage`，下一轮直接用。跳过与看门狗不参与回写（否则会越调越早）。
+- **断言补齐**：`scripts/test-host.mjs` 新增 21 条结构断言 —— 死键回来、外壳重新长胖、
+  拆分被合回去，都会直接红。此前这几处 UI 一条断言都没有。
+- **浏览器套件适配拆分**：`scripts/harness/rows.js` 的 React shim 现在会展开函数组件
+  （原来只读 createElement 的原始结果，拆完就看不见子组件里的按钮）。这一条是套件自己抓出来的回归，
+  修的是 shim，不是断言。
 
 ### 修复
 

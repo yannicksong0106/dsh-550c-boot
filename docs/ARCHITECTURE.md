@@ -8,7 +8,10 @@
 assets/550C-source.html   原版独立页面（归档，构建的输入）
 scripts/extract.mjs       从原页面提取样式表 / DOM / 脚本 → src/assets.js + src/show.js
 scripts/build.mjs         把四段拼成 lib/client.js（无打包器、无构建依赖）
+src/state.js              跨插件共享状态 + 唯一的"皮肤在不在"判定
 src/client.js             手写：遮罩层、通用设置那一行、插件导出
+src/login-ueg.js          UEG 档：iframe + postMessage（与终端档无关）
+src/login-gate.js         登录相位调度器 + 终端档（五步时间轴闭包）
 src/enhance.js            内容增强层：追加样式表 + 观察 stage（含桌面标题栏那两段）
 lib/client.js             构建产物（浏览器半边，提交进仓库）
 lib/index.js              宿主半边：往 index 注入首帧

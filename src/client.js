@@ -158,6 +158,17 @@ const HOST_CSS = `
 .dsh550c-stage{height:100%}
 `
 
+/**
+ * 分段控件的选中态：固定黑底白字。
+ *
+ * 不能借用主题变量（brand-primary / brand-text）—— 那两个值在深浅主题里是翻面的，
+ * 皮肤还会改写它们，结果就是一会儿黑底黑字、一会儿白底白字（0.5.2 反复修过三次的那个 bug）。
+ *
+ * 皮肤仓库里有一份逐字相同的规则（dsh-550c-skin 的 .dsh550c-skin-seg button.on）。
+ * 【改这里必须同步改那边】，两个包各自独立发布，靠这条注释维持一致。
+ */
+const SEG_ACTIVE_RULE = '.dsh550c-seg button.on{background:#111;color:#fff;font-weight:600}'
+
 /** The General-settings row sheet; DSH tokens so it matches either theme. */
 const ROW_CSS = `
 .dsh550c-row{display:flex;align-items:center;gap:16px;padding:10px 0;flex-wrap:wrap}
@@ -169,10 +180,7 @@ const ROW_CSS = `
 .dsh550c-seg button{border:0;background:transparent;color:var(--dsw-alias-label-secondary,#666);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;cursor:pointer}
 .dsh550c-seg button+button{border-left:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35))}
 .dsh550c-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
-/* 选中态的文字必须用 brand-text，不能写死白色：
-   DSH 的 brand-primary 是随主题翻面的（浅色近黑、深色近白），
-   写死 color:#fff 在暗色主题下就成了白底白字，整个分段控件的文字看不见。 */
-.dsh550c-seg button.on{background:#111;color:#fff;font-weight:600}
+${SEG_ACTIVE_RULE}
 .dsh550c-preview{border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.35));background:transparent;color:var(--dsw-alias-label-primary,#191919);font-family:inherit;font-size:12.5px;line-height:1.4;padding:5px 14px;border-radius:8px;cursor:pointer}
 .dsh550c-preview:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}
 .dsh550c-preview[disabled]{opacity:.55;cursor:default}

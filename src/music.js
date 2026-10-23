@@ -58,6 +58,13 @@ const BGM_TOTAL_MAX_BYTES = BGM_CAP_BYTES
 const BGM_DEFAULT_VOLUME = 0.6
 /** 默认淡出时长 1500ms。 */
 const BGM_DEFAULT_FADE_MS = 1500
+/**
+ * 淡出比画面多收 0.5 秒。
+ *
+ * 排程公式：delay = 片头时长 + TAIL - 淡出时长。
+ * 0.5 秒是听感实测值：正好收在画面结束之后，既不拖尾也不硬切。
+ */
+const BGM_TAIL_MS = 500
 /** 曲子先播完时的短淡出：直接切会爆音。 */
 const BGM_END_FADE_MS = 400
 /** 淡出时长的可调范围（毫秒）。 */
@@ -727,9 +734,8 @@ function scheduleBootFade(splashTotalMs) {
     bootFadeTimer = null
     if (bgmPlayer.audio === null) return
     const fade = Math.max(BGM_FADE_MIN_MS, readBgmFade())
-    // 让淡出在【画面结束后约 0.5 秒】才收完，听感上更自然 ✓
-    const TAIL_MS = 500
-    const delay = Math.max(0, Number(splashTotalMs) + TAIL_MS - fade)
+    // 让淡出在【画面结束后约 0.5 秒】才收完，听感上更自然 ✓（见 BGM_TAIL_MS）
+    const delay = Math.max(0, Number(splashTotalMs) + BGM_TAIL_MS - fade)
     bootFadeTimer = window.setTimeout(() => {
       bootFadeTimer = null
       fadeBgm(fade)

@@ -1,6 +1,6 @@
 # DSH 550C 启动动画 —— 项目现状
 
-> 最后更新：2026-10-22
+> 最后更新：2026-10-23
 > 主仓库：`F:\项目\dsh-start`
 > 试装副本：`F:\项目\dsh-start-web`
 
@@ -9,11 +9,27 @@
 ## 一、当前状态
 
 ```
-版本        0.5.1（准备发布）
+版本        0.5.2（未发布；本轮以「代码结构」为看点）
 远端 main   62f9fa5（落后本地，推送被 hosts 挡住）
-npm         dsh-550c-boot@0.5.0（0.5.1 待发）
+npm         dsh-550c-boot@0.5.0
 tag         v0.5.0 → 97a3f8a
 ```
+
+### 0.5.2 代码结构重构（2026-10-23）
+
+计划与验收标准见 [REFACTOR-0.5.2.md](REFACTOR-0.5.2.md)，逐批结果：
+
+| 批次 | 内容 | 结果 |
+|---|---|---|
+| S1+S2 | 新增 `src/state.js`，10 个 window 旗子收口；修三条真 bug | 完成 |
+| S3 | 曲库容量单一来源；`MusicRow` 295 → 50 行 | 完成 |
+| S4 | `LoginRow` 340 → 53 行；`decodeQrImage()` 可单测 | 完成 |
+| S5 | `mountLoginGate` 450 → 25 行；UEG 独立成 `src/login-ueg.js` | 完成 |
+| S6 | 常量具名化（`BGM_CAP_BYTES` / `BGM_TAIL_MS` / `QR_DECODE_TARGETS` / `SEG_ACTIVE_RULE`） | 完成 |
+| S7 | 文档同步 | 完成 |
+
+结构断言的守卫在 `scripts/test-host.mjs` 的「bundle structure / component budgets」两段：
+死键回来、外壳重新长胖、拆分被合回去，都会直接红。
 
 待推送的提交（hosts 把 github.com / api.github.com 指到 127.0.0.1，见下节）：
 二维码多尺度识别、多轮文档、开机音乐淡出系列修复、曲库上限调整、0.5.1 发布准备。

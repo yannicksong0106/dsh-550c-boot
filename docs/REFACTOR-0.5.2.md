@@ -166,3 +166,39 @@ lib/client.js 是生成物，revert 源码后重跑 build 即可复原。
 | LOGIN_CARD_KEYS 无人使用 | git grep → 只有定义与 login-gate.js:51 的循环 |
 | build.mjs 的 PARTS 顺序可控 | 单一数组、无 glob |
 | 构建幂等 | 改前实跑：build 后 git status 为空 |
+
+---
+
+## 7. 执行记录（2026-10-23）
+
+| 批次 | 提交 | 结果 |
+|---|---|---|
+| S1+S2 | refactor(state) | `src/state.js` 落地；死键 0 命中；三条 bug 修完并断言 |
+| S3 | refactor(music) | `MusicRow` 295 → 50 行；容量常量合并 |
+| S4 | refactor(login) | `LoginRow` 340 → 53 行；`decodeQrImage` 可单测 |
+| S5 | refactor(login-gate) | `mountLoginGate` 450 → 25 行；UEG 独立成文件 |
+| S6 | 随批次 | `BGM_TAIL_MS` / `QR_DECODE_TARGETS` / `SEG_ACTIVE_RULE` 具名化 |
+| S7 | 文档 | CHANGELOG / STATUS / ARCHITECTURE / MAINTENANCE 同步 |
+
+**门禁结果（真实 node，非 Electron）**
+
+```
+build ×3       同一份 sha256（幂等）
+node --check   client / index 均 0
+test-host      81 条断言，0 失败
+harness        71 条断言 / 16 用例全过（Edge headless）
+```
+
+**执行中发现并修正的三处计划错误（都已回写上文）**
+
+1. **"src 不许有反引号"这条是错的**：build.mjs 把拼好的 body 当变量插值，注释里的反引号不会撕开模板串
+   （login.js 一直带着 4 个，构建从没出过问题）。真正的雷是 `</script` 与 `<!--`，build 已拦。
+2. **"重命名支持 Esc 取消"是错的**：原实现只有 Enter 与失焦提交，本轮不加行为。
+3. **环境坑**：本机的 `process.execPath` 指向 Electron，用它跑 `node scripts/*.mjs` 会静默退出 0 ——
+   早期"门禁全绿"是假绿。所有门禁必须用 `C:\Program Files\nodejs\node.exe` 跑。
+
+**唯一一条由套件抓出的回归**
+
+拆分 `LoginRow` 之后，`scripts/harness/rows.js` 的 shim 读不到子组件里的按钮（它不做 React 调和）。
+修的是 shim（新增 `expand()` 展开函数组件），断言一条没放宽 —— 修完 71 条断言仍全过，
+说明拆出来的树与改前渲染结果逐字一致。
