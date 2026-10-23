@@ -394,5 +394,16 @@ for (const part of ['function MusicToggle(', 'function MusicTransport(', 'functi
   check('music block is split: ' + part.trim(), CLIENT.includes(part))
 }
 
+const loginRowLines = spanLines(CLIENT, 'function LoginRow()', 'function ScreenModeRow(')
+check('LoginRow shell stays under 160 lines', loginRowLines < 160, String(loginRowLines) + ' lines')
+for (const part of ['function ScreenModeRow(', 'function AutoplayRow(', 'function VoiceRow(', 'function QrRow(', 'function CardFields(', 'async function decodeQrImage(']) {
+  check('login block is split: ' + part.trim(), CLIENT.includes(part))
+}
+check('qr decode returns a result instead of setting state', CLIENT.includes('return { ok: true, text: result.data }'))
+check(
+  'card fields are driven by LOGIN_CARD_KEYS',
+  CLIENT.includes('for (const field of LOGIN_CARD_KEYS)') && CLIENT.includes('readLoginPref(LOGIN_CARD_KEY(name),'),
+)
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1

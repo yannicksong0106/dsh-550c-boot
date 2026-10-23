@@ -56,6 +56,8 @@
 | src/client.js | 8 处 window.__dsh550c* → state；record.startedAt；finish(reason) |
 | src/panel.js | 默认页签改 dsh550cSkinInstalled()；修缩进 |
 
+> 备注（执行中核实）：上面"不许反引号"这条原计划写错了，见第 4 节第 1 条更正。
+
 **验收**：G1–G4；Git grep 查 window.__dsh550c(Applied|BootPage|RowsOnSeries|SplashPlayed|PageOwner) 在 src/ 下 0 命中。
 
 ### S2 · 三条真 bug + 断言（P0）
@@ -135,7 +137,8 @@ lib/client.js 是生成物，revert 源码后重跑 build 即可复原。
 
 ## 4. 禁区（违反即返工）
 
-1. src/*.js 里不许出现反引号与美元加大括号（build 会把它们拼进模板字符串）。
+1. src/*.js 的注释里允许反引号（实测：build.mjs 把拼好的 body 作为变量插值，不会撕开外层模板串；
+   login.js 早就带着 4 个注释反引号，构建一直正常）。真正的雷是 `</script` 与 `<!--` —— build.mjs 已强制拦截。
 2. preview/ueg.html 不许用 indexOf/slice 取区间。
 3. 不许用 git checkout -- / 重置工作区来"解决"冲突。
 4. 不许改 lib/client.js（生成物）。
