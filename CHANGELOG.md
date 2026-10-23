@@ -30,6 +30,12 @@
 - **入口与版本行也拆了**：`apply` 192 → 15 行（设置行 / 页归属 / 无片头登录 / 卸载四个
   `install*` 函数）；`VersionRow` 170 → 73 行（状态进 `useVersionCheck()`，八种文案进纯函数
   `versionNote()`，可以直接单测）。
+- **片头挂载拆成三段**：`mountOverlay` 167 → 26 行。DOM 组装（`buildOverlayShell`）、
+  生命周期三条出口（`createOverlaySession`：skip / finish / dispose）、时间轴启动
+  （`startOverlayShow`：watchdog、音乐、淡出排程、首帧交接）各自独立。
+  拆分时"退出路径"第一次变成可数的：原来要么通读 167 行，要么靠猜。
+- **开机音乐去重**：两段一模一样的 200ms 去抖 effect 合成 `useDebouncedWrite()`，
+  重命名判断抽成纯函数 `renameInIndex()`。音乐行新增 3 条浏览器断言（标题 / 描述 / 按钮）。
 - **新增「功能清单」断言**：42 项用户可感知的能力（三档片头、Esc 跳过、桌面标题栏、曲库、UEG 三幕、
   二维码编解码、检查更新…）逐条对应到 bundle 里的符号。重构误删功能会直接红 —— 这张表是这一轮
   "不许删功能"那条约束的机械版本。

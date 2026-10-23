@@ -425,7 +425,7 @@ const FEATURES = [
   ['片头三档（关闭 / 简易 / 完整）', "MODE_VALUES = ['off', 'simple', 'full']"],
   ['片头预览按钮', "mountOverlay(true)"],
   ['Esc 跳过', "event.key === 'Escape'"],
-  ['点击跳过', "host.addEventListener('click', skip)"],
+  ['点击跳过', "host.addEventListener('click', record.skip)"],
   ['两段式交接', "dsh550c-out"],
   ['宿主首帧遮蔽', "__dsh550cFirstFrame"],
   ['看门狗兜底', 'watchdog fired'],
@@ -481,6 +481,22 @@ const versionRowLines = spanLines(CLIENT, 'function VersionRow()', 'function use
 check('VersionRow shell stays markup-only (under 90)', versionRowLines < 90, String(versionRowLines) + ' lines')
 check('version note is a pure function', CLIENT.includes('function versionNote(view)'))
 check('version row state lives in a hook', CLIENT.includes('function useVersionCheck()'))
+
+// 片头挂载 / 卸载：两条路径各一条断言，防止拆分时把某一半弄丢
+const overlayLines = spanLines(CLIENT, 'function mountOverlay(force)', 'function buildOverlayShell(')
+check('mountOverlay is an entry point, not the whole splash', overlayLines < 60, String(overlayLines) + ' lines')
+check('overlay DOM assembly is its own function', CLIENT.includes('function buildOverlayShell(mode)'))
+check('overlay lifecycle is its own function', CLIENT.includes('function createOverlaySession(mode, host, dragBand)'))
+check('overlay timeline is its own function', CLIENT.includes('function startOverlayShow(record, mode)'))
+check(
+  'mount path appends both nodes',
+  CLIENT.includes('document.body.appendChild(host)') && CLIENT.includes('document.body.appendChild(dragBand)'),
+)
+check(
+  'unmount path removes both nodes and clears the live handle',
+  CLIENT.includes('dragBand.remove()') && CLIENT.includes('host.remove()') && CLIENT.includes('if (liveOverlay === record) liveOverlay = null'),
+)
+check('first frame retires in the mounting task', CLIENT.includes('if (!uegOwnsFirstFrame) endFirstFrame()'))
 
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1

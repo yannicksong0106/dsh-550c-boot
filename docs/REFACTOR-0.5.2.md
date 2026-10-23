@@ -220,3 +220,23 @@ harness        71 条断言 / 16 用例全过（Edge headless）
 
 **一处阈值说明**：`VersionRow` 的 markup 预算从 60 调到 90。这不是放宽行为断言 ——
 逻辑已经全在 hook 里，剩下的是 createElement 字面量；再往上长才说明有人把逻辑塞回渲染函数。
+
+---
+
+## 9. S10（2026-10-23，第三轮）
+
+| 改动 | 前 | 后 | 行为证据 |
+|---|---|---|---|
+| `mountOverlay` | 167 行 | **26 行** | harness 对片头有 20+ 条断言：首帧顺序、遮挡、跳过、HUD、拖拽、家族包冲突 |
+| ├ `buildOverlayShell` | — | 35 行 | 只建 DOM，不碰时间轴 |
+| ├ `createOverlaySession` | — | 61 行 | 三条出口第一次显式化：skip / finish / dispose |
+| └ `startOverlayShow` | — | 62 行 | watchdog、音乐、排程、首帧交接 |
+| `useMusicLibrary` | 151 行 | **141 行** | 两段重复去抖合成 `useDebouncedWrite`，重命名抽成纯函数 |
+| 浏览器断言 | 71 | **74** | 音乐行的标题 / 描述 / 按钮逐字锁定 |
+
+**新增静态断言（7 条）**：挂载路径（两个节点都 append）、卸载路径（两个节点都 remove +
+清 live 句柄）、首帧同任务撤退、三个新函数存在、`mountOverlay` < 60 行。
+
+**当前 ≥150 行的自研函数只剩 4 个**：`createShow` 573（冻结）、`mountTerminalGate` 341、
+`enhanceShow` 216（移植增强层）、`loginShadowCss` 179（CSS 数据，不是逻辑）。
+`mountTerminalGate` 留到 skin × boot 适配那一轮，先补"全流程走完"的运行时探针再动它。

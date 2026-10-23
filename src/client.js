@@ -442,16 +442,30 @@ function mountOverlay(force) {
     return null
   }
 
+  const shell = buildOverlayShell(mode)
+  const record = createOverlaySession(mode, shell.host, shell.dragBand)
+  startOverlayShow(record, mode)
+  liveOverlay = record
+  return record
+}
+
+/**
+ * 建遮罩的宿主元素与拖拽带 —— 只碰 DOM，不碰时间轴。
+ *
+ * 两个元素都直接挂在 body 上（不是槽位），原因见 mountOverlay 的注释。
+ * 返回 { host, dragBand }，由 createOverlaySession 持有并在卸载时删掉。
+ */
+function buildOverlayShell(mode) {
   const host = document.createElement('div')
   host.className = 'dsh550c-host'
   // This plugin's OWN marker. It used to borrow the dsh-web family's
   // `data-dsh-boot-splash`, which turned out to be a trap: that name is not an
   // exemption but a contract — the family styles it (opaque background,
   // pointer-events:none, z-index 9999, its own transition) and its boot shield
-  // reuses and then REMOVES any `div[data-dsh-boot-splash]` it finds. Carrying it
-  // meant the splash lost click-to-skip, its fade and its lifetime on every
-  // install that ships the family bundle. `aria-hidden="true"` is the standard
-  // attribute that earns the same drag exemption without borrowing a private name.
+  // reuses and then REMOVES any div carrying it. Carrying it meant the splash lost
+  // click-to-skip, its fade and its lifetime on every install that ships the family
+  // bundle. aria-hidden="true" is the standard attribute that earns the same drag
+  // exemption without borrowing a private name.
   host.dataset.dsh550cBoot = ''
   host.setAttribute('aria-hidden', 'true')
   ensureHostSheet()
@@ -474,23 +488,49 @@ function mountOverlay(force) {
   document.body.appendChild(host)
   // Above the overlay, so the window can still be dragged by its title strip.
   document.body.appendChild(dragBand)
+  return { host: host, dragBand: dragBand }
+}
 
-  const record = { host: host, dragBand: dragBand, show: null, enhance: null, caption: null, finished: false, fadeTimer: null, watchdog: null, dispose: null, startedAt: 0 }
+/**
+ * 一次片头的生命周期记录：三条出口都集中在这里。
+ *
+ *   skip    点击 / Esc 走这条（取消 show，show 的 promise 随后 reject → finish）
+ *   finish  播完、跳过、看门狗、启动异常都汇到这里（唯一的收口）
+ *   dispose 淡出结束后真正拆 DOM，并把相位交给登录（唯一的出口）
+ *
+ * 拆出来的意义：原来这三条和 DOM 组装、时间轴启动混在一个 167 行的函数里，
+ * 想确认"到底有几条退出路径"得通读全文。
+ */
+function createOverlaySession(mode, host, dragBand) {
+  const record = {
+    host: host,
+    dragBand: dragBand,
+    show: null,
+    enhance: null,
+    caption: null,
+    finished: false,
+    fadeTimer: null,
+    watchdog: null,
+    dispose: null,
+    startedAt: 0,
+  }
 
-  const skip = () => {
+  record.skip = () => {
     if (record.show !== null) record.show.cancel()
   }
-  const onKey = (event) => {
-    if (event.key === 'Escape') skip()
+
+  record.onKey = (event) => {
+    if (event.key === 'Escape') record.skip()
   }
-  const dispose = () => {
+
+  record.dispose = () => {
     if (record.fadeTimer !== null) window.clearTimeout(record.fadeTimer)
     if (record.watchdog !== null) window.clearTimeout(record.watchdog)
     if (record.show !== null) record.show.cancel()
     if (record.enhance !== null) record.enhance()
     if (record.caption !== null) record.caption()
-    host.removeEventListener('click', skip)
-    window.removeEventListener('keydown', onKey, true)
+    host.removeEventListener('click', record.skip)
+    window.removeEventListener('keydown', record.onKey, true)
     dragBand.remove()
     host.remove()
     if (liveOverlay === record) liveOverlay = null
@@ -499,7 +539,8 @@ function mountOverlay(force) {
     // announces the hand-off, so a separately installed login plugin can take over.
     if (!pluginTornDown) startLoginPhase()
   }
-  const finish = (reason) => {
+
+  record.finish = (reason) => {
     if (record.finished) return
     record.finished = true
     // 只有"片子自己播完"才是有效样本：跳过、看门狗、启动异常都会让间隔变短，
@@ -516,9 +557,24 @@ function mountOverlay(force) {
     // 这条路径是片头唯一的收口 —— 播完、Esc 跳过、点击跳过、看门狗兜底都汇到这儿。
     fadeOutBootMusic(FADE_MS)
     host.classList.add('dsh550c-out')
-    record.fadeTimer = window.setTimeout(dispose, FADE_MS + 40)
+    record.fadeTimer = window.setTimeout(record.dispose, FADE_MS + 40)
   }
-  record.dispose = dispose
+
+  return record
+}
+
+/**
+ * 挂动画内容并启动时间轴：watchdog、音乐、淡出排程、首帧交接。
+ *
+ * 顺序是有讲究的，别随手调：
+ *   ① enhanceShow 先跑 —— --caption-fill / --caption-symbol 由它定义，
+ *      早读会静默落到兜底值，整场片头的标题栏颜色都错
+ *   ② adaptCaption 再读那两个变量
+ *   ③ endFirstFrame 必须是"把遮罩放上屏的同一任务"的最后一句，
+ *      否则宿主黑帧和 shadow 根会在两帧里交接，看得见缝
+ */
+function startOverlayShow(record, mode) {
+  const host = record.host
 
   // Absolute watchdog. The show has its own end, the click/Esc skip and a catch
   // around startup, but this is the one guarantee that matters on a daily-driver
@@ -526,7 +582,7 @@ function mountOverlay(force) {
   // out of Settings — which is where the switch that disables it lives.
   record.watchdog = window.setTimeout(() => {
     console.error('[dsh-550c-boot] watchdog fired; dismissing the splash')
-    finish()
+    record.finish()
   }, mode === 'full' ? 30000 : 12000)
 
   try {
@@ -544,7 +600,7 @@ function mountOverlay(force) {
     // live outside the ported code, so re-extracting never loses them.
     record.enhance = enhanceShow(stage, { mode: mode })
 
-    // After enhanceShow: `--caption-fill` / `--caption-symbol` are defined by the
+    // After enhanceShow: --caption-fill / --caption-symbol are defined by the
     // enhancement sheet, so reading them any earlier silently falls back to the
     // built-in default and the strip keeps the wrong colour for the whole splash.
     record.caption = adaptCaption(host)
@@ -556,11 +612,13 @@ function mountOverlay(force) {
     let uegOwnsFirstFrame = false
     try {
       uegOwnsFirstFrame = typeof readLoginScreen === 'function' && readLoginScreen() === 'ueg'
-    } catch { uegOwnsFirstFrame = false }
+    } catch (error) {
+      uegOwnsFirstFrame = false
+    }
 
     record.show = createShow(stage, { mode: mode, cancelled: CANCELLED })
-    host.addEventListener('click', skip)
-    window.addEventListener('keydown', onKey, true)
+    host.addEventListener('click', record.skip)
+    window.addEventListener('keydown', record.onKey, true)
     // 开机音乐：只配 550C 片头，UEG 档不配（见上面）。
     startBootMusic()
     // 片头总时长 = 上一轮实测（没有就按载体兜底，见 SPLASH_MS）。
@@ -568,17 +626,14 @@ function mountOverlay(force) {
     record.startedAt = performance.now()
     scheduleBootFade(readSplashMs(mode))
     // 第一个回调 = 播完（可回写时长），第二个 = 被跳过/取消（不回写）。
-    record.show.start().then(() => finish('played'), () => finish('skipped'))
+    record.show.start().then(() => record.finish('played'), () => record.finish('skipped'))
     // Last statement of the same task that put the overlay on screen: the host
     // half's first frame and this shadow root swap inside one paint.
     if (!uegOwnsFirstFrame) endFirstFrame()
   } catch (error) {
     console.error('[dsh-550c-boot] show failed to start', error)
-    finish()
+    record.finish()
   }
-
-  liveOverlay = record
-  return record
 }
 
 /**

@@ -760,6 +760,30 @@ function stopPreviewBgm() {
   stopBgm()
 }
 
+/**
+ * 把连续变化的值延迟写进存储（滑杆拖动时别每像素写一次）。
+ *
+ * 依赖数组只放 value：write 是模块级函数，换它没有意义 —— 这一点和原来的两段
+ * useEffect 完全一致，只是把重复的两份合成一份。
+ */
+function useDebouncedWrite(value, write) {
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => write(value), 200)
+    return () => window.clearTimeout(timer)
+  }, [value])
+}
+
+/**
+ * 重命名后的新索引；名字为空 / 没变化 / 找不到 id 都返回 null（调用方据此不落盘）。
+ *
+ * 抽成纯函数的理由：这段判断是曲库唯一有点分支的地方，留在回调里只能靠手点验。
+ */
+function renameInIndex(index, id, name) {
+  const track = index.find((item) => item.id === id)
+  if (track === undefined || name === '' || name === track.name) return null
+  return index.map((item) => (item.id === id ? Object.assign({}, item, { name: name }) : item))
+}
+
 /* ── 设置页组件 ────────────────────────────────────────────────────────── */
 
 const MUSIC_STYLE_ID = 'dsh550c-boot-music-style'
@@ -843,16 +867,9 @@ function useMusicLibrary() {
     }
   }, [])
 
-  // 滑杆是连续拖动的，写存储按 200ms 收一次，不然拖一次写几十次。
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => writeBgmVolume(volume), 200)
-    return () => window.clearTimeout(timer)
-  }, [volume])
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => writeBgmFade(fade), 200)
-    return () => window.clearTimeout(timer)
-  }, [fade])
+  // 滑杆是连续拖动的：写存储按 200ms 收一次，不然拖一次写几十次。
+  useDebouncedWrite(volume, writeBgmVolume)
+  useDebouncedWrite(fade, writeBgmFade)
 
   /* ── 唯一的写入口：子组件只调这些，不碰存储 ───────────────────────── */
 
@@ -902,12 +919,9 @@ function useMusicLibrary() {
   }
 
   const commitRename = (id, value) => {
-    const name = String(value ?? '').trim()
-    const track = readBgmIndex().find((item) => item.id === id)
+    const next = renameInIndex(readBgmIndex(), id, String(value ?? '').trim())
     setEditing(null)
-    if (name === '' || track === undefined || name === track.name) return
-    const next = readBgmIndex().map((item) => (item.id === id ? Object.assign({}, item, { name: name }) : item))
-    if (writeBgmIndex(next)) setIndex(next)
+    if (next !== null && writeBgmIndex(next)) setIndex(next)
   }
 
   const removeTrack = (id) => {
