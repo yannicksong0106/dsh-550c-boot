@@ -155,6 +155,9 @@ cases.push(['caption · transparent strip', probe('simple', 'index.html', 'delay
 // 4d. the settings rows, rendered for real (scripts/harness/rows.js): the text a
 //     user reads, the buttons they get, and the three outcomes of the update check.
 cases.push(['settings rows · rendered text', probe('simple', 'index.html', 'delay=0', 2500)])
+// 皮肤在场时必须仍然有 550C 页 —— 皮肤自己只往子插槽里加行，页面归 boot 声明。
+// 这条用例是 0.5.2 结构重构那次回归的看门人（当时 boot 让位，整页消失）。
+cases.push(['settings rows · skin installed', probe('simple', 'index.html', 'delay=0&skin=1', 2500)])
 
 // 5. the shell's failure card keeps its spinner removed: the cover must retire
 //    itself rather than hide the failure (the plugin never materialises here)
@@ -254,8 +257,14 @@ const EXPECT = {
   'failure card · cover retires itself': { coverApplied: true, coverAfterWatch: false },
   // The settings rows, rendered for real by scripts/harness/rows.js: these are the
   // exact strings a user reads, so a wording change has to be deliberate.
+  'settings rows · skin installed': {
+    'rows.skinSimulated': true,
+    'rows.pageRegistered': true,
+  },
   'settings rows · rendered text': {
-    'rows.ids': 'boot-550c,boot-550c-scheme,boot-550c-music,boot-550c-update,boot-550c-skin-promo,boot-550c-skin-promo-look,boot-550c-login',
+    // 末尾的 550c 是设置页本身：页面归 boot 声明（皮肤只往子插槽加行），
+    // 而且声明是同步的 —— 这条断言顺带看着「页面确实注册上了」。
+    'rows.ids': 'boot-550c,boot-550c-scheme,boot-550c-music,boot-550c-update,boot-550c-skin-promo,boot-550c-skin-promo-look,boot-550c-login,550c',
     'rows.mode.title': '550C 开机动画',
     'rows.mode.desc': '启动时播放 550C 片头；完整模式可用点击或 Esc 跳过。',
     'rows.mode.buttons': '关闭,简易,完整,预览',

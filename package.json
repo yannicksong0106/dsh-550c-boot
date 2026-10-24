@@ -139,7 +139,7 @@
     "extract": "node scripts/extract.mjs",
     "build": "node scripts/extract.mjs && node scripts/build.mjs",
     "check": "node --check lib/client.js && node --check lib/index.js",
-    "test": "node scripts/test-host.mjs",
+    "test": "node scripts/test-host.mjs && node scripts/check-skin-contract.mjs",
     "test:harness": "node scripts/harness/build.mjs && node scripts/harness/run.mjs",
     "verify": "npm run build && npm run check && npm test && npm run test:harness",
     "prepublishOnly": "node scripts/extract.mjs && node scripts/build.mjs && node --check lib/client.js && node --check lib/index.js",

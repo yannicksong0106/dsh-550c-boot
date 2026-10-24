@@ -240,3 +240,42 @@ harness        71 条断言 / 16 用例全过（Edge headless）
 **当前 ≥150 行的自研函数只剩 4 个**：`createShow` 573（冻结）、`mountTerminalGate` 341、
 `enhanceShow` 216（移植增强层）、`loginShadowCss` 179（CSS 数据，不是逻辑）。
 `mountTerminalGate` 留到 skin × boot 适配那一轮，先补"全流程走完"的运行时探针再动它。
+
+---
+
+## 10. S11：skin × boot 适配地基（2026-10-24）
+
+### 10.1 抓到一条真回归
+
+S1 里我把 `claimSectionIfFree()` 的判据从死键换成 `dsh550cSkinInstalled()`，语义写成
+"皮肤在场就让位"。**这个前提是错的**：皮肤仓库从不注册 `settings.section`，它自己的
+`test/selectors.test.mjs` 里有一条断言明确写着"the skin must not register its own settings page
+any more — boot owns it"。也就是说两边都装时，boot 一让位就没人声明页面 → 整个 550C 页消失。
+
+修复：`installPageClaim()` 无条件声明（`bootPageOwned` 幂等），删掉 1.5 秒轮询（它的理由
+建立在同一个错误前提上）。`dsh550cSkinInstalled()` 只保留两个正当用途：默认页签、推荐行。
+
+### 10.2 号段（按插槽分，不是全局一条线）
+
+| 插槽 | 谁填 | 号段 |
+|---|---|---|
+| `settings.550c.item`（外观） | 皮肤 | 10–59（现用 10/20/30/40/50） |
+| `settings.550c.item`（外观） | boot 兜底推荐行 | ≥90 |
+| `settings.550c.anim.550c`（开机动画） | boot | 50–89（现用 50/60/70/80/85） |
+| `settings.550c.anim.ueg`（UEG） | boot | 50–89（现用 80） |
+
+### 10.3 新增守卫
+
+```
+scripts/check-skin-contract.mjs   11 条跨仓库契约（npm test 已接入；无皮肤仓库时跳过）
+harness "settings rows · skin installed"   模拟皮肤在场 → 断言 550C 页仍注册
+```
+
+### 10.4 门禁
+
+```
+test-host     98 断言 0 失败
+skin-contract 11 条全过
+harness       76 断言 / 17 用例全过（新增皮肤在场用例）
+皮肤仓库       build 通过 + 24 条测试全过
+```

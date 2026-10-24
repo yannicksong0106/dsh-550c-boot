@@ -30,6 +30,15 @@
 - **入口与版本行也拆了**：`apply` 192 → 15 行（设置行 / 页归属 / 无片头登录 / 卸载四个
   `install*` 函数）；`VersionRow` 170 → 73 行（状态进 `useVersionCheck()`，八种文案进纯函数
   `versionNote()`，可以直接单测）。
+- **「550C」页只有一个主人**：页面由 boot 无条件声明，皮肤只往子插槽加行。
+  结构重构期间一度写成"皮肤在场就让位"，而皮肤根本不声明页面 —— 两边都装时整页会消失。
+  靠皮肤仓库的契约测试才抓回来（它明确断言自己不许注册 `settings.section`）。
+  现在有两条守卫：一条浏览器用例（模拟皮肤在场 → 断言页面仍注册），一条跨仓库契约检查。
+- **新增跨仓库契约检查**：`scripts/check-skin-contract.mjs`，11 条 —— 页面归属、三个子插槽声明、
+  号段（按插槽分：外观页皮肤 10–59 / boot 兜底 ≥90；动画与 UEG 页 boot 50–89）、
+  皮肤版本号信号、两侧选中态配色逐字一致。`npm test` 已接入；皮肤仓库不在时自动跳过（CI 友好）。
+- **皮肤仓库注释互指**：选中态 CSS 与 `__dsh550cSkinVersion` 两处补上指向 boot 的说明，
+  行为零改动（皮肤侧 24 条测试仍全过）。
 - **片头挂载拆成三段**：`mountOverlay` 167 → 26 行。DOM 组装（`buildOverlayShell`）、
   生命周期三条出口（`createOverlaySession`：skip / finish / dispose）、时间轴启动
   （`startOverlayShow`：watchdog、音乐、淡出排程、首帧交接）各自独立。

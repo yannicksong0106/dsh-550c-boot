@@ -371,8 +371,16 @@ check(
   regionOf('src/panel.js').includes('dsh550cSkinInstalled()') && !regionOf('src/panel.js').includes('__dsh550c'),
 )
 const claimRegion = regionOf('src/client.js')
-check('page claim uses the single skin check', claimRegion.includes('if (dsh550cSkinInstalled()) return'))
-check('page claim retry timer is owned by the plugin', claimRegion.includes('claimRetry') && claimRegion.includes('clearInterval(claimRetry)'))
+// 页面归属：皮肤【不】声明 settings.section（它自己的测试里有一条断言钉着这件事），
+// 所以 boot 必须无条件声明 —— 一旦写成「皮肤在场就让位」，两边都装时整页消失。
+/** 只取 installPageClaim 自己的函数体：别的函数里出现皮肤判定是正常的。 */
+const claimBody = CLIENT.slice(CLIENT.indexOf('function installPageClaim('), CLIENT.indexOf('function installLoginWithoutSplash('))
+check(
+  'page claim is unconditional (skin presence must not gate it)',
+  claimBody.includes("ctx.slots.inject('settings.section'") && !claimBody.includes('dsh550cSkinInstalled'),
+  claimBody.includes('dsh550cSkinInstalled') ? 'claim still gated on the skin' : 'ok',
+)
+check('page claim leaves no timer behind', !claimBody.includes('setInterval'))
 check('splash duration is measured, not hardcoded', claimRegion.includes('readSplashMs(mode)') && claimRegion.includes('rememberSplashMs(mode'))
 
 // ── 组件预算：拆开的壳不许再长回去 ──────────────────────────────────────────
@@ -457,7 +465,7 @@ const FEATURES = [
   ['iframe 头像递送', 'ueg:need-photo'],
   ['iframe 二维码递送', 'ueg:need-qr'],
   ['550C 设置页声明', 'PANEL_SLOTS'],
-  ['550C 页归属兜底', 'claimSectionIfFree'],
+  ['550C 页归属', 'installPageClaim'],
   ['皮肤推荐行', 'SkinPromoRow'],
   ['检查更新', 'UPDATE_ROUTE'],
   ['一键更新', 'APPLY_ROUTE'],

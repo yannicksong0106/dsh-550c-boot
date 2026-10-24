@@ -255,7 +255,9 @@ function dsh550cMarkSkin(version) {
     皮肤关闭 → 「外观」页出现推荐行
     启用皮肤 → 推荐行在【1 帧内】消失（不再等 1.2 秒）
     关闭皮肤 → 重新出现
-· 550C 页归属：皮肤在场时页面归皮肤（boot 不再抢），皮肤撤销后 boot 顶上
+· 550C 页归属：~~皮肤在场时页面归皮肤（boot 不再抢）~~ **← 这条前提是错的，2026-10-24 更正**：
+  皮肤从不声明 settings.section（它自己的测试里钉着），页面只能由 boot 声明。
+  现行判据：boot 无条件声明；皮肤只在场时往子插槽加行。见 scripts/check-skin-contract.mjs。
 · node scripts/build.mjs && node --check lib/client.js
 · npm test && npm run test:harness  全绿
 ```

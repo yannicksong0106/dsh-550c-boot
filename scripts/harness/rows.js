@@ -118,6 +118,9 @@
           },
         },
       }
+      // 模拟"皮肤已安装"：皮肤宿主半边在 index-inject 阶段就是这么写的。
+      // 用它可以验证 boot 是否仍然声明 550C 页 —— 皮肤自己【不】声明页面。
+      if (options.skin === true) window.__dsh550cSkinVersion = '9.9.9'
       try {
         options.exports.apply(ctx)
       } catch (error) {
@@ -160,6 +163,9 @@
       }
 
       var report = { ids: Object.keys(rows).join(String.fromCharCode(44)) }
+      // 页面组件是否真的注册上了（id 550c）。皮肤在场时这条必须是 true。
+      report.pageRegistered = Object.prototype.hasOwnProperty.call(rows, '550c')
+      report.skinSimulated = options.skin === true
       var mode = renderer(rows['boot-550c'])
       report.mode = describe(mode.draw())
       delete report.mode._checkButton

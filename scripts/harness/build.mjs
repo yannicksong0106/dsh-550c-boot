@@ -208,6 +208,7 @@ const HARNESS_SCRIPT = `
         window.__dsh550cRows.run({
           exports: exports,
           React: React,
+          skin: params.get('skin') === '1',
           setFetch: function (impl) { window.fetch = impl; },
           done: function (rows) {
             window.fetch = realFetch;

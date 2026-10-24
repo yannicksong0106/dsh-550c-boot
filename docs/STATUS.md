@@ -28,6 +28,7 @@ tag         v0.5.0 → 97a3f8a
 | S6 | 常量具名化（`BGM_CAP_BYTES` / `BGM_TAIL_MS` / `QR_DECODE_TARGETS` / `SEG_ACTIVE_RULE`） | 完成 |
 | S9 | 收尾：`apply` 192 → 15 行、`VersionRow` 170 → 73 行、42 项功能清单断言、行尾归一 | 完成 |
 | S10 | `mountOverlay` 167 → 26 行（拆三块）；音乐去抖去重 + 3 条浏览器断言 | 完成 |
+| S11 | 页面归属修正（boot 唯一声明）+ 跨仓库契约检查 11 条 + 皮肤侧注释互指 | 完成 |
 | S7 | 文档同步 | 完成 |
 
 结构断言的守卫在 `scripts/test-host.mjs` 的「bundle structure / component budgets」两段：

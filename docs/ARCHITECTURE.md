@@ -8,6 +8,7 @@
 assets/550C-source.html   原版独立页面（归档，构建的输入）
 scripts/extract.mjs       从原页面提取样式表 / DOM / 脚本 → src/assets.js + src/show.js
 scripts/build.mjs         把四段拼成 lib/client.js（无打包器、无构建依赖）
+scripts/check-skin-contract.mjs  boot ↔ skin 的跨仓库契约检查（11 条，无皮肤仓库时跳过）
 src/state.js              跨插件共享状态 + 唯一的"皮肤在不在"判定
 src/client.js             手写：遮罩层、通用设置那一行、插件导出
 src/login-ueg.js          UEG 档：iframe + postMessage（与终端档无关）
