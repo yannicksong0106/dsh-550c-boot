@@ -35,6 +35,21 @@ npm run test:harness   # 浏览器里跑真实插件：15 个用例 / 54 条断�
 | `failure card · cover retires itself` | shell 的失败卡片不会被首帧盖住 |
 | 4 张截图 | 有行时纯黑首帧、抽掉行时 HARNESS 卡片可见、简易/完整档播放中 |
 
+## 真机探针（一条命令看"能不能用"）
+
+```powershell
+# 1) 起 web 实例，从输出里取 token
+node "C:\Users\Song\AppData\Local\npm-cache\_npx\<hash>\node_modules\@deepseek-ai\dsh\lib\bin.js" `
+     --profile web --port 3850 --no-open
+
+# 2) 探针：片头有没有播完、三个页签有没有行、控制台有没有插件报错
+node scripts/dev/probe-live.mjs <token> 3850
+```
+
+与 harness 的分工：harness 验 bundle 在受控页面里的行为；`probe-live` 验**真实 DSH + 真实 profile**
+（含皮肤同时安装的场景）下插件是否可用。0.5.2 的真机结果：1.2s 遮罩在、首帧已撤；
+7.2s 遮罩拆净；开机动画页 5 行 / 3 段；UEG 页 2 行 / 4 段 / 11 个输入；控制台无 `[dsh-550c-boot]` 报错。
+
 ## 真实 GUI
 
 `scripts/verify.mjs` 用 DevTools 协议驱动真实浏览器，可以在**精确时刻**、**指定模式**下截图并读取

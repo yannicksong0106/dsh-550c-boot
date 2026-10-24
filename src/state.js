@@ -42,8 +42,6 @@ function dsh550cDefaults() {
     splashPlayed: false,
     /** 本插件是否已经声明了「550C」页（皮肤不在场时由 boot 顶上）。 */
     bootPageOwned: false,
-    /** 设置行是否已经从共享的「通用」页搬到「550C」页。 */
-    rowsOnSeries: false,
   }
 }
 
