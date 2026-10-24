@@ -506,5 +506,10 @@ check(
 )
 check('first frame retires in the mounting task', CLIENT.includes('if (!uegOwnsFirstFrame) endFirstFrame()'))
 
+// 登录档位：只开放「关闭 / UEG」。终端档（mountTerminalGate）是 0.4 之前的遗留实现，
+// 当前 UI 不可达；这条断言把产品决定钉住 —— 想重新开放它，先改这里，再补全流程探针。
+check('login offers exactly off and ueg', CLIENT.includes("LOGIN_VALUES = ['off', 'ueg']"))
+check('terminal phase is documented as legacy', CLIENT.includes('当前不可达'))
+
 console.log(failures === 0 ? '\nall cases pass' : `\n${String(failures)} FAILURES`)
 process.exitCode = failures === 0 ? 0 : 1
