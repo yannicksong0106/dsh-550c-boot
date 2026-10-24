@@ -9,7 +9,7 @@
 ## 一、当前状态
 
 ```
-版本        0.5.2（未发布；本轮以「代码结构」为看点）
+版本        0.5.2（发布就绪；本轮以「代码结构」为看点）
 远端 main   62f9fa5（落后本地，推送被 hosts 挡住）
 npm         dsh-550c-boot@0.5.0
 tag         v0.5.0 → 97a3f8a
@@ -29,6 +29,16 @@ tag         v0.5.0 → 97a3f8a
 | S9 | 收尾：`apply` 192 → 15 行、`VersionRow` 170 → 73 行、42 项功能清单断言、行尾归一 | 完成 |
 | S10 | `mountOverlay` 167 → 26 行（拆三块）；音乐去抖去重 + 3 条浏览器断言 | 完成 |
 | S11 | 页面归属修正（boot 唯一声明）+ 跨仓库契约检查 11 条 + 皮肤侧注释互指 | 完成 |
+
+**发布前检查（2026-10-24 实测）**
+
+```
+node scripts/extract.mjs && node scripts/build.mjs   → git status 干净（两端幂等）
+npm test                                             → 98 宿主断言 + 11 条皮肤契约，0 失败
+node scripts/harness/run.mjs                         → 76 断言 / 17 用例全过
+npm pack --dry-run                                   → 25 个文件，无多余产物
+皮肤仓库  npm run build && node --test test/*.test.mjs → 24 条全过
+```
 | S7 | 文档同步 | 完成 |
 
 结构断言的守卫在 `scripts/test-host.mjs` 的「bundle structure / component budgets」两段：
